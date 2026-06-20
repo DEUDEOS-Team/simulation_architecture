@@ -1,0 +1,44 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd"
+            schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>araba_v2</name>
+  <version>1.0.0</version>
+  <description>
+    <p>URDF Description package for araba_v2 — 4-wheeled ground vehicle</p>
+    <p>This package contains configuration data, 3D models and launch files
+    for araba_v2 robot. Migrated from sw2urdf export for ROS 2 + Gazebo Harmonic.</p>
+  </description>
+
+  <maintainer email="TODO@email.com">TODO</maintainer>
+  <license>BSD</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <!-- ROS 2 temel -->
+  <depend>rclcpp</depend>
+  <depend>robot_state_publisher</depend>
+  <depend>joint_state_publisher_gui</depend>
+  <depend>rviz2</depend>
+  <depend>urdf</depend>
+  <depend>xacro</depend>
+  <depend>tf2_ros</depend>
+
+  <!-- Gazebo Harmonic (Ignition) -->
+  <depend>ros_gz_sim</depend>
+  <depend>ros_gz_bridge</depend>
+  <depend>gz_ros2_control</depend>
+
+  <!-- ros2_control -->
+  <depend>controller_manager</depend>
+  <depend>ros2_control</depend>
+  <depend>ros2_controllers</depend>
+  <depend>joint_state_broadcaster</depend>
+  <depend>velocity_controllers</depend>
+  <depend>position_controllers</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <architecture_independent/>
+  </export>
+</package>

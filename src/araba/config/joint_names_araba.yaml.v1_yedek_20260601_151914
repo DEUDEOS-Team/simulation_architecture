@@ -1,0 +1,1 @@
+controller_joint_names: ['', 'on_sol_tekerlek_direksiyon', 'on_sol_tekerlek_donus', 'on_sag_tekerlek_direksiyon', 'on_sag_tekerlek_donus', 'arka_sag_tekerlek_donus', 'arka_sol_tekerlek_donus', ]

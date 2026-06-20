@@ -1,0 +1,42 @@
+# araba — gz_ros2_control konfigürasyonu
+# Bu dosya Gazebo Harmonic'te ros2_control kullanarak
+# tekerlek hızı ve direksiyon pozisyonu kontrolü sağlar.
+
+controller_manager:
+  ros__parameters:
+    update_rate: 100  # Hz
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    wheel_velocity_controller:
+      type: velocity_controllers/JointGroupVelocityController
+
+    steering_position_controller:
+      type: position_controllers/JointGroupPositionController
+
+# Tekerlek hız kontrolcüsü (4 teker bağımsız)
+wheel_velocity_controller:
+  ros__parameters:
+    joints:
+      - on_sag_ileri_donus_hareket
+      - on_sol_ileri_donus_hareket
+      - arka_sol_ileri_donus_hareket
+      - arka_sag_ileri_donus_hareket
+    command_interfaces:
+      - velocity
+    state_interfaces:
+      - position
+      - velocity
+
+# Direksiyon pozisyon kontrolcüsü (2 ön teker)
+steering_position_controller:
+  ros__parameters:
+    joints:
+      - on_sag_yatay_direksiyon_hareket
+      - on_sol_yatay_direksiyon_hareket
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity

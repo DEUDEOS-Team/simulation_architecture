@@ -1,0 +1,102 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="traffic_light">
+
+    <static>false</static>
+    <pose>0 0 1.0 0 0 0</pose>
+
+
+    <plugin
+      filename="libTrafficLightPlugin.so"
+      name="gz::sim::systems::TrafficLightPlugin">
+      <green_duration>5</green_duration>
+      <yellow_duration>2</yellow_duration>
+      <red_duration>5</red_duration>
+    </plugin>
+
+    <link name="link">
+      <kinematic>true</kinematic>
+      <collision name="direk_collision">
+        <pose>0 0 1.0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>2.8</length>
+          </cylinder>
+        </geometry>
+      </collision>
+
+      <visual name="direk_visual">
+        <pose>0 0 1.0 0 0 0</pose>
+        <geometry>
+          <cylinder>
+            <radius>0.05</radius>
+            <length>2.8</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.5 0.5 0.5 1</ambient>
+          <diffuse>0.5 0.5 0.5 1</diffuse>
+        </material>
+      </visual>
+
+      <collision name="collision">
+        <geometry>
+          <mesh>
+            <uri>model://traffic_light/meshes/stop_light.obj</uri>
+            <scale>0.01 0.01 0.01</scale>
+          </mesh>
+        </geometry>
+      </collision>
+
+      <visual name="frame">
+        <pose>0 0 2.8 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <uri>model://traffic_light/meshes/stop_light.obj</uri>
+            <scale>0.01 0.01 0.01</scale>
+          </mesh>
+        </geometry>
+      </visual>
+
+      <visual name="red">
+        <pose>-0.001123 -0.082251 2.652486 0 0 0</pose>
+        <geometry>
+          <sphere><radius>0.1012</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0.1 0.05 0.05 1</ambient>
+          <diffuse>0.1 0.05 0.05 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <emissive>0.05 0 0 1</emissive>
+        </material>
+      </visual>
+
+      <visual name="yellow">
+        <pose>-0.001123 -0.082251 2.398 0 0 0</pose>
+        <geometry>
+          <sphere><radius>0.1012</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.05 1</ambient>
+          <diffuse>0.1 0.1 0.05 1</diffuse>
+          <specular>0 0 0 1</specular>
+          <emissive>0.05 0.05 0 1</emissive>
+        </material>
+      </visual>
+
+      <visual name="green">
+        <pose>-0.001123 -0.082251 2.145 0 0 0</pose>
+        <geometry>
+          <sphere><radius>0.1012</radius></sphere>
+        </geometry>
+        <material>
+          <ambient>0 1 0 1</ambient>
+          <diffuse>0 1 0 1</diffuse>
+          <specular>0 1 0 1</specular>
+          <emissive>0 1 0 1</emissive>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com) 
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578
+     For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
+<robot
+  name="araba_v3">
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-1.538 -0.67496 0.36002"
+        rpy="0 0 0" />
+      <mass
+        value="100" />
+      <inertia
+        ixx="290.17"
+        ixy="0.0081159"
+        ixz="-71.699"
+        iyy="1264.2"
+        iyz="-0.00046409"
+        izz="1438.3" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.9098 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/base_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="on_sag_yatay_direksiyon_hareket_link">
+    <inertial>
+      <origin
+        xyz="-0.00352261823678557 0.0331126307138478 -3.9972754287132E-08"
+        rpy="0 0 0" />
+      <mass
+        value="0.850661084183846" />
+      <inertia
+        ixx="0.00186948576472371"
+        ixy="0.000119801108117018"
+        ixz="-4.39293827510431E-09"
+        iyy="0.00185442879256936"
+        iyz="1.43126132850544E-09"
+        izz="0.000897822731976467" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sag_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.866666666666667 0.909803921568627 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sag_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sag_yatay_direksiyon_hareket"
+    type="revolute">
+    <origin
+      xyz="-0.35491 -1.4181 0.055943"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="on_sag_yatay_direksiyon_hareket_link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="on_sag_ileri_donus_hareket">
+    <inertial>
+      <origin
+        xyz="1.24543305743963E-05 -0.0657347939165409 -4.23224435011638E-08"
+        rpy="0 0 0" />
+      <mass
+        value="20.5413325532222" />
+      <inertia
+        ixx="0.256188980546467"
+        ixy="1.20208768642015E-13"
+        ixz="6.49680877932543E-13"
+        iyy="0.488654888949509"
+        iyz="2.2671747414608E-13"
+        izz="0.256188980547522" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sag_ileri_donus_hareket.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sag_ileri_donus_hareket.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sag_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="on_sag_yatay_direksiyon_hareket_link" />
+    <child
+      link="on_sag_ileri_donus_hareket" />
+    <axis
+      xyz="0 -1 0" />
+  </joint>
+  <link
+    name="on_sol_yatay_direksiyon_hareket_link">
+    <inertial>
+      <origin
+        xyz="-0.00352247802127237 -0.0331124221484779 2.53371063019259E-07"
+        rpy="0 0 0" />
+      <mass
+        value="0.850670520196677" />
+      <inertia
+        ixx="0.00186949308365475"
+        ixy="-0.000119804348670647"
+        ixz="1.61166429219714E-09"
+        iyy="0.0018544352649425"
+        iyz="-2.32349854321328E-09"
+        izz="0.000897829654360742" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sol_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.866666666666667 0.909803921568627 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sol_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sol_yatay_direksiyon_hareket"
+    type="revolute">
+    <origin
+      xyz="-0.35501 0.068111 0.053282"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="on_sol_yatay_direksiyon_hareket_link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="0"
+      upper="0"
+      effort="0"
+      velocity="0" />
+  </joint>
+  <link
+    name="on_sol_ileri_donus_hareket">
+    <inertial>
+      <origin
+        xyz="1.24543310596748E-05 0.0657347939165434 4.23222793824451E-08"
+        rpy="0 0 0" />
+      <mass
+        value="20.5413325532223" />
+      <inertia
+        ixx="0.256188980547614"
+        ixy="2.34953073000055E-13"
+        ixz="5.64604787348445E-13"
+        iyy="0.488654888949511"
+        iyz="1.03000145125695E-13"
+        izz="0.256188980546379" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sol_ileri_donus_hareket.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/on_sol_ileri_donus_hareket.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sol_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="on_sol_yatay_direksiyon_hareket_link" />
+    <child
+      link="on_sol_ileri_donus_hareket" />
+    <axis
+      xyz="0 -1 0" />
+  </joint>
+  <link
+    name="arka_sol_ileri_donus_hareket_link">
+    <inertial>
+      <origin
+        xyz="-3.557154570899E-13 0.0412609877940089 -5.01945707220841E-13"
+        rpy="0 0 0" />
+      <mass
+        value="9.95409226674589" />
+      <inertia
+        ixx="0.174421798158767"
+        ixy="6.22274930636876E-16"
+        ixz="1.16435431948069E-16"
+        iyy="0.341668719490356"
+        iyz="1.05170342441701E-15"
+        izz="0.174421798158767" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/arka_sol_ileri_donus_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/arka_sol_ileri_donus_hareket_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arka_sol_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="-2.03 0.0005 0.0875"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="arka_sol_ileri_donus_hareket_link" />
+    <axis
+      xyz="0 -1 0" />
+  </joint>
+  <link
+    name="arka_sag_ileri_donus_hareket_link">
+    <inertial>
+      <origin
+        xyz="4.54747350886464E-13 -0.041260987794465 3.29362925821641E-12"
+        rpy="0 0 0" />
+      <mass
+        value="9.95409226674597" />
+      <inertia
+        ixx="0.174421798158768"
+        ixy="5.36399126416895E-16"
+        ixz="-2.54606192543811E-17"
+        iyy="0.341668719490358"
+        iyz="1.02951315992195E-15"
+        izz="0.174421798158769" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/arka_sag_ileri_donus_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.792156862745098 0.819607843137255 0.933333333333333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/arka_sag_ileri_donus_hareket_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arka_sag_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="-2.03 -1.3505 0.0875"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="arka_sag_ileri_donus_hareket_link" />
+    <axis
+      xyz="0 -1 0" />
+  </joint>
+  <link
+    name="imu_sensor_link">
+    <inertial>
+      <origin
+        xyz="6.21724893790088E-15 -7.7715611723761E-16 0.025"
+        rpy="0 0 0" />
+      <mass
+        value="0.1275" />
+      <inertia
+        ixx="5.31250000000001E-05"
+        ixy="2.33425688328475E-20"
+        ixz="1.32937459367631E-20"
+        iyy="5.31250000000001E-05"
+        iyz="-1.63961013760583E-21"
+        izz="5.31250000000001E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/imu_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/imu_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="imu_sensor"
+    type="fixed">
+    <origin
+      xyz="-0.95107 -0.675 0.0265"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="imu_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="gps_sensor_link">
+    <inertial>
+      <origin
+        xyz="6.21724893790088E-15 1.55431223447522E-15 0.025"
+        rpy="0 0 0" />
+      <mass
+        value="0.1275" />
+      <inertia
+        ixx="5.31250000000001E-05"
+        ixy="2.19026128225151E-20"
+        ixz="1.47337019470955E-20"
+        iyy="5.31250000000001E-05"
+        iyz="-1.63961013760579E-21"
+        izz="5.31250000000001E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/gps_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/gps_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="gps_sensor"
+    type="fixed">
+    <origin
+      xyz="-0.81835 -0.675 0.0265"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="gps_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="lidar_sensor_link">
+    <inertial>
+      <origin
+        xyz="-8.68194405256872E-14 -9.6034291630076E-14 0.0491999999999999"
+        rpy="0 0 0" />
+      <mass
+        value="0.796191020135855" />
+      <inertia
+        ixx="0.00114503863227267"
+        ixy="-1.99230971722593E-26"
+        ixz="-6.83141357043129E-20"
+        iyy="0.00114503863227267"
+        iyz="4.59356799248278E-19"
+        izz="0.0010052160438909" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/lidar_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/lidar_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="lidar_sensor"
+    type="fixed">
+    <origin
+      xyz="-1.1873 -0.67509 1.1889"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="lidar_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="cam_sensor_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0" />
+      <inertia
+        ixx="0"
+        ixy="0"
+        ixz="0"
+        iyy="0"
+        iyz="0"
+        izz="0" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/cam_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba_v3/meshes/cam_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="cam_sensor"
+    type="fixed">
+    <origin
+      xyz="-1.272351960051 -0.675000000000005 0.947888723978668"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="cam_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+</robot>

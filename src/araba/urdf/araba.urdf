@@ -1,0 +1,770 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This URDF was automatically created by SolidWorks to URDF Exporter! Originally created by Stephen Brawner (brawner@gmail.com)
+     Commit Version: 1.6.0-4-g7f85cfe  Build Version: 1.6.7995.38578 -->
+<!-- araba_v3 geometrisinden uyarlanmistir — Gazebo Harmonic eklentileri eklenmistir.
+     v3 modeli dogrudan X-ileri yonelimlidir (base_link X = arac onu).
+     base_footprint_joint identity rotasyonludur. -->
+<robot
+  name="araba">
+
+  <!-- base_footprint: ROS/Gazebo uyumlulugu icin kok link.
+       v3 zaten X-ileri oldugu icin rotasyonsuz (identity) baglanir. -->
+  <link name="base_footprint">
+    <inertial>
+      <mass value="0.001"/>
+      <inertia ixx="0.00001" ixy="0" ixz="0" iyy="0.00001" iyz="0" izz="0.00001"/>
+    </inertial>
+  </link>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <link
+    name="base_link">
+    <inertial>
+      <origin
+        xyz="-1.538 -0.67496 0.36002"
+        rpy="0 0 0" />
+      <mass
+        value="100" />
+      <inertia
+        ixx="290.17"
+        ixy="0.0081159"
+        ixz="-71.699"
+        iyy="1264.2"
+        iyz="-0.00046409"
+        izz="1438.3" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/base_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.9098 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <!-- Basit kutu — STL mesh fizik performansini olduruyordu -->
+      <origin
+        xyz="-1.25 -0.675 0.45"
+        rpy="0 0 0" />
+      <geometry>
+        <box size="2.6 1.5 0.9" />
+      </geometry>
+    </collision>
+  </link>
+  <link
+    name="on_sag_yatay_direksiyon_hareket_link">
+    <inertial>
+      <origin
+        xyz="-0.0035226 0.033113 -3.9973E-08"
+        rpy="0 0 0" />
+      <mass
+        value="0.85066" />
+      <inertia
+        ixx="0.0018695"
+        ixy="0.0001198"
+        ixz="-4.3929E-09"
+        iyy="0.0018544"
+        iyz="1.4313E-09"
+        izz="0.00089782" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/on_sag_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.9098 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/on_sag_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sag_yatay_direksiyon_hareket"
+    type="revolute">
+    <origin
+      xyz="-0.35491 -1.4181 0.055943"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="on_sag_yatay_direksiyon_hareket_link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-0.5236"
+      upper="0.5236"
+      effort="1000"
+      velocity="5" />
+    <dynamics damping="10.0" friction="1.0" />
+  </joint>
+  <link
+    name="on_sag_ileri_donus_hareket_link">
+    <inertial>
+      <origin
+        xyz="1.2454E-05 -0.065735 -4.2322E-08"
+        rpy="0 0 0" />
+      <mass
+        value="20.541" />
+      <inertia
+        ixx="0.25619"
+        ixy="1.2021E-13"
+        ixz="6.4968E-13"
+        iyy="0.48865"
+        iyz="2.2672E-13"
+        izz="0.25619" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/on_sag_ileri_donus_hareket.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.25" length="0.15" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sag_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="on_sag_yatay_direksiyon_hareket_link" />
+    <child
+      link="on_sag_ileri_donus_hareket_link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+  <link
+    name="on_sol_yatay_direksiyon_hareket_link">
+    <inertial>
+      <origin
+        xyz="-0.0035225 -0.033112 2.5337E-07"
+        rpy="0 0 0" />
+      <mass
+        value="0.85067" />
+      <inertia
+        ixx="0.0018695"
+        ixy="-0.0001198"
+        ixz="1.6117E-09"
+        iyy="0.0018544"
+        iyz="-2.3235E-09"
+        izz="0.00089783" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/on_sol_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.86667 0.9098 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/on_sol_yatay_direksiyon_hareket_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sol_yatay_direksiyon_hareket"
+    type="revolute">
+    <origin
+      xyz="-0.35501 0.068111 0.053282"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="on_sol_yatay_direksiyon_hareket_link" />
+    <axis
+      xyz="0 0 1" />
+    <limit
+      lower="-0.5236"
+      upper="0.5236"
+      effort="1000"
+      velocity="5" />
+    <dynamics damping="10.0" friction="1.0" />
+  </joint>
+  <link
+    name="on_sol_ileri_donus_hareket_link">
+    <inertial>
+      <origin
+        xyz="1.2454E-05 0.065735 4.2322E-08"
+        rpy="0 0 0" />
+      <mass
+        value="20.541" />
+      <inertia
+        ixx="0.25619"
+        ixy="2.3495E-13"
+        ixz="5.6460E-13"
+        iyy="0.48865"
+        iyz="1.0300E-13"
+        izz="0.25619" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/on_sol_ileri_donus_hareket.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.25" length="0.15" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="on_sol_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="0 0 0"
+      rpy="0 0 0" />
+    <parent
+      link="on_sol_yatay_direksiyon_hareket_link" />
+    <child
+      link="on_sol_ileri_donus_hareket_link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+  <link
+    name="arka_sol_ileri_donus_hareket_link">
+    <inertial>
+      <origin
+        xyz="-3.5572E-13 0.041261 -5.0195E-13"
+        rpy="0 0 0" />
+      <mass
+        value="9.9541" />
+      <inertia
+        ixx="0.17442"
+        ixy="6.2227E-16"
+        ixz="1.1644E-16"
+        iyy="0.34167"
+        iyz="1.0517E-15"
+        izz="0.17442" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/arka_sol_ileri_donus_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.25" length="0.15" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arka_sol_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="-2.03 0.0005 0.0875"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="arka_sol_ileri_donus_hareket_link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+  <link
+    name="arka_sag_ileri_donus_hareket_link">
+    <inertial>
+      <origin
+        xyz="4.5475E-13 -0.041261 3.2936E-12"
+        rpy="0 0 0" />
+      <mass
+        value="9.9541" />
+      <inertia
+        ixx="0.17442"
+        ixy="5.3640E-16"
+        ixz="-2.5461E-17"
+        iyy="0.34167"
+        iyz="1.0295E-15"
+        izz="0.17442" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/arka_sag_ileri_donus_hareket_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="0.79216 0.81961 0.93333 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="1.5708 0 0" />
+      <geometry>
+        <cylinder radius="0.25" length="0.15" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="arka_sag_ileri_donus_hareket"
+    type="continuous">
+    <origin
+      xyz="-2.03 -1.3505 0.0875"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="arka_sag_ileri_donus_hareket_link" />
+    <axis
+      xyz="0 1 0" />
+  </joint>
+  <link
+    name="imu_sensor_link">
+    <inertial>
+      <origin
+        xyz="6.2172E-15 -7.7716E-16 0.025"
+        rpy="0 0 0" />
+      <mass
+        value="0.1275" />
+      <inertia
+        ixx="5.3125E-05"
+        ixy="2.3343E-20"
+        ixz="1.3294E-20"
+        iyy="5.3125E-05"
+        iyz="-1.6396E-21"
+        izz="5.3125E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/imu_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/imu_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="imu_sensor"
+    type="fixed">
+    <origin
+      xyz="-0.95107 -0.675 0.0265"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="imu_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="gps_sensor_link">
+    <inertial>
+      <origin
+        xyz="6.2172E-15 1.5543E-15 0.025"
+        rpy="0 0 0" />
+      <mass
+        value="0.1275" />
+      <inertia
+        ixx="5.3125E-05"
+        ixy="2.1903E-20"
+        ixz="1.4734E-20"
+        iyy="5.3125E-05"
+        iyz="-1.6396E-21"
+        izz="5.3125E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/gps_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/gps_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="gps_sensor"
+    type="fixed">
+    <origin
+      xyz="-0.81835 -0.675 0.0265"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="gps_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="lidar_sensor_link">
+    <inertial>
+      <origin
+        xyz="-8.6819E-14 -9.6034E-14 0.0492"
+        rpy="0 0 0" />
+      <mass
+        value="0.79619" />
+      <inertia
+        ixx="0.0011450"
+        ixy="-1.9923E-26"
+        ixz="-6.8314E-20"
+        iyy="0.0011450"
+        iyz="4.5936E-19"
+        izz="0.0010052" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/lidar_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/lidar_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="lidar_sensor"
+    type="fixed">
+    <origin
+      xyz="-1.1873 -0.67509 1.1889"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="lidar_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+  <link
+    name="cam_sensor_link">
+    <inertial>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <mass
+        value="0.1275" />
+      <inertia
+        ixx="5.3125E-05"
+        ixy="0"
+        ixz="0"
+        iyy="5.3125E-05"
+        iyz="0"
+        izz="5.3125E-05" />
+    </inertial>
+    <visual>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/cam_sensor_link.STL" />
+      </geometry>
+      <material
+        name="">
+        <color
+          rgba="1 1 1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin
+        xyz="0 0 0"
+        rpy="0 0 0" />
+      <geometry>
+        <mesh
+          filename="package://araba/meshes/cam_sensor_link.STL" />
+      </geometry>
+    </collision>
+  </link>
+  <joint
+    name="cam_sensor"
+    type="fixed">
+    <origin
+      xyz="-1.2724 -0.675 0.94789"
+      rpy="0 0 0" />
+    <parent
+      link="base_link" />
+    <child
+      link="cam_sensor_link" />
+    <axis
+      xyz="0 0 0" />
+  </joint>
+
+  <!-- ================================================================ -->
+  <!-- GAZEBO PLUGINS                                                     -->
+  <!-- ================================================================ -->
+
+  <!-- Ackermann surus kontrolu — /cmd_vel dinler, /odom yayinlar -->
+  <gazebo>
+    <plugin filename="gz-sim-ackermann-steering-system"
+            name="gz::sim::systems::AckermannSteering">
+      <left_joint>on_sol_ileri_donus_hareket</left_joint>
+      <left_joint>arka_sol_ileri_donus_hareket</left_joint>
+      <right_joint>on_sag_ileri_donus_hareket</right_joint>
+      <right_joint>arka_sag_ileri_donus_hareket</right_joint>
+      <left_steering_joint>on_sol_yatay_direksiyon_hareket</left_steering_joint>
+      <right_steering_joint>on_sag_yatay_direksiyon_hareket</right_steering_joint>
+      <kingpin_width>1.486</kingpin_width>
+      <steering_limit>0.5236</steering_limit>
+      <wheel_base>1.675</wheel_base>
+      <wheel_separation>1.486</wheel_separation>
+      <wheel_radius>0.25</wheel_radius>
+      <min_velocity>-2.78</min_velocity>
+      <max_velocity>5.56</max_velocity>
+      <min_acceleration>-5</min_acceleration>
+      <max_acceleration>5</max_acceleration>
+      <topic>/cmd_vel</topic>
+      <odom_topic>/odom</odom_topic>
+      <tf_topic>/tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+    </plugin>
+  </gazebo>
+
+  <!-- Joint state yayincisi — bridge /model/araba/joint_state -> /joint_states -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <topic>/model/araba/joint_state</topic>
+    </plugin>
+  </gazebo>
+
+  <!-- ================================================================ -->
+  <!-- TEKERLEK SURTUNME PARAMETRELERI                                   -->
+  <!-- ================================================================ -->
+
+  <gazebo reference="on_sol_ileri_donus_hareket_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>5e5</kp>
+    <kd>200</kd>
+    <minDepth>0.002</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+
+  <gazebo reference="on_sag_ileri_donus_hareket_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>5e5</kp>
+    <kd>200</kd>
+    <minDepth>0.002</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+
+  <gazebo reference="arka_sol_ileri_donus_hareket_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>5e5</kp>
+    <kd>200</kd>
+    <minDepth>0.002</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+
+  <gazebo reference="arka_sag_ileri_donus_hareket_link">
+    <mu1>1.0</mu1>
+    <mu2>1.0</mu2>
+    <kp>5e5</kp>
+    <kd>200</kd>
+    <minDepth>0.002</minDepth>
+    <maxVel>0.1</maxVel>
+  </gazebo>
+
+  <!-- ================================================================ -->
+  <!-- SENSORLER                                                          -->
+  <!-- ================================================================ -->
+
+  <!-- SICK multiScan100 — 16 katman, 360°, 0.17° cozunurluk, 100m, 20Hz -->
+  <gazebo reference="lidar_sensor_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>/lidar/scan</topic>
+      <update_rate>20</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>2118</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159265</min_angle>
+            <max_angle>3.14159265</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>16</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.261799</min_angle>
+            <max_angle>0.261799</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.1</min>
+          <max>100.0</max>
+          <resolution>0.004</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0</mean>
+          <stddev>0.02</stddev>
+        </noise>
+      </lidar>
+      <gz_frame_id>lidar_sensor_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- Intel RealSense D415 — 1280x720, 69.4° FOV, 30 Hz; /camera/image yayinlar -->
+  <gazebo reference="cam_sensor_link">
+    <sensor name="camera" type="camera">
+      <topic>/camera/image</topic>
+      <update_rate>30</update_rate>
+      <camera>
+        <horizontal_fov>1.2113</horizontal_fov>
+        <image>
+          <width>1280</width>
+          <height>720</height>
+          <format>R8G8B8</format>
+        </image>
+        <clip>
+          <near>0.1</near>
+          <far>100</far>
+        </clip>
+        <noise>
+          <type>gaussian</type>
+          <mean>0</mean>
+          <stddev>0.007</stddev>
+        </noise>
+      </camera>
+      <gz_frame_id>cam_sensor_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- IMU — 100 Hz; /imu/data yayinlar -->
+  <gazebo reference="imu_sensor_link">
+    <sensor name="imu" type="imu">
+      <topic>/imu/data</topic>
+      <update_rate>100</update_rate>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.009</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.021</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+      <gz_frame_id>imu_sensor_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+  <!-- GPS (NavSat) — 10 Hz; /gps/fix yayinlar -->
+  <gazebo reference="gps_sensor_link">
+    <sensor name="gps" type="navsat">
+      <topic>/gps/fix</topic>
+      <update_rate>10</update_rate>
+      <gz_frame_id>gps_sensor_link</gz_frame_id>
+    </sensor>
+  </gazebo>
+
+</robot>

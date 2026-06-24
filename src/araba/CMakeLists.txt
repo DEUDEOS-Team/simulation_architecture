@@ -36,12 +36,6 @@ install(PROGRAMS
 )
 
 install(PROGRAMS
-  scripts/lane_perception_node.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME lane_perception_node
-)
-
-install(PROGRAMS
   scripts/perception_pipeline_node.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME perception_pipeline_node
@@ -51,12 +45,6 @@ install(PROGRAMS
   scripts/speed_controller_node.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME speed_controller_node
-)
-
-install(PROGRAMS
-  scripts/keyboard_teleop.py
-  DESTINATION lib/${PROJECT_NAME}
-  RENAME keyboard_teleop
 )
 
 # NOT: DENEME node'ları — RENAME YOK. Böylece --symlink-install gerçek symlink kurar ve

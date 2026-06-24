@@ -85,9 +85,9 @@ def generate_launch_description():
         ]),
 
         TimerAction(period=6.5, actions=[
-            Node(package='araba', executable='lane_perception_node', name='lane_perception_node',
-                 output='screen', parameters=[{'use_sim_time': True, 'model_path': segmentation_model_path,
-                                               'show_window': False}]),
+            Node(package='araba', executable='lane_test_node.py', name='lane_test_node',
+                 output='screen', parameters=[{'use_sim_time': True,
+                                               'show_window': True, 'proc_width': 0}]),
         ]),
 
         TimerAction(period=7.0, actions=[
@@ -95,15 +95,9 @@ def generate_launch_description():
                  output='screen', parameters=[{'use_sim_time': True, 'show_dashboard': True}]),
         ]),
 
-        # TODO: Algoritma kontrolü aktif edilince yorumdan çıkar
-        # TimerAction(period=7.5, actions=[
-        #     Node(package='araba', executable='speed_controller_node', name='speed_controller_node',
-        #          output='screen', parameters=[{'use_sim_time': True}]),
-        # ]),
-
-        # Manuel WASD kontrol — doğrudan /cmd_vel'e yayın yapar
-        TimerAction(period=8.0, actions=[
-            Node(package='araba', executable='keyboard_teleop', name='keyboard_teleop',
-                 output='screen'),
+        # Şerit takibi → /cmd_vel (tam otonom)
+        TimerAction(period=7.5, actions=[
+            Node(package='araba', executable='autonomous_control_node.py', name='autonomous_control_node',
+                 output='screen', parameters=[{'use_sim_time': True}]),
         ]),
     ])

@@ -234,7 +234,7 @@
         <collision name='collision'>
           <geometry>
             <mesh>
-              <uri>file:///home/bekir/sim2_ws/otonom_projem/teknofest_haritası/tunnel.STL</uri>
+              <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/teknofest_haritası/tunnel.STL</uri>
               <scale>0.001 0.001 0.001</scale>
             </mesh>
           </geometry>
@@ -242,7 +242,7 @@
         <visual name='visual'>
           <geometry>
             <mesh>
-              <uri>file:///home/bekir/sim2_ws/otonom_projem/teknofest_haritası/tunnel.STL</uri>
+              <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/teknofest_haritası/tunnel.STL</uri>
               <scale>0.001 0.001 0.001</scale>
             </mesh>
           </geometry>
@@ -269,217 +269,217 @@
       <self_collide>false</self_collide>
     </model>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light</name>
       <pose>47.418498992919922 -48.165699005126953 0.45072999596595764 0 0 -0.0020380734666161056</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light_0</name>
       <pose>47.385898590087891 -22.783700942993164 0.45215728878974915 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light_1</name>
       <pose>47.4281005859375 1.1899700164794922 0.43334001302719116 0 0.058757762246313731 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light_3</name>
       <pose>16.678800582885742 -13.284000396728514 0.46849700808525085 0 0 3.1219340402775844</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light_4</name>
       <pose>16.836999893188477 -38.176700592041016 0.49700599908828735 0 0 3.1190439794226781</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light_5</name>
       <pose>-16.316999435424805 9.7111101150512713 0.46964499354362488 0 0 3.1332794319756743</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_light</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_light</uri>
       <name>traffic_light_6</name>
       <pose>-16.511199951171875 -38.710998535156243 0.48950099945068359 0 0 -3.1344262789429238</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/ileri_ve_sola</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/ileri_ve_sola</uri>
       <name>ileri_ve_sola</name>
       <pose>47.472900390625 -55.592700958251953 0 0 0 1.5137523604266279</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/ileri_mecburi</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/ileri_mecburi</uri>
       <name>ileri_mecburi</name>
       <pose>47.700298309326172 -31.111000061035156 0 0 0 1.5673020140724063</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/white_barrier</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/white_barrier</uri>
       <name>white_barrier</name>
       <pose>45.605335235595703 -7.1390409469604492 0 0 0 1.6008899731446449</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/red_barrier</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/red_barrier</uri>
       <name>red_barrier</name>
       <pose>41.386455535888672 -10.559684753417969 0 0 0 1.5894400019973283</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/white_barrier</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/white_barrier</uri>
       <name>white_barrier_0</name>
       <pose>45.349998474121094 -13.227499961853027 0 0 0 1.5566649614710391</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/doner_kavsak</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/doner_kavsak</uri>
       <name>doner_kavsak</name>
       <pose>-7.4564199447631836 -30.832799911499023 0 0 0 1.5745649316766441</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/doner_kavsak</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/doner_kavsak</uri>
       <name>doner_kavsak_0</name>
       <pose>0.64328380095955318 -14.002350820563267 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/doner_kavsak</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/doner_kavsak</uri>
       <name>doner_kavsak_1</name>
       <pose>-16.444700241088867 -6.3995499610900879 0 0 0 1.7411529579494134</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/tunel</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/tunel</uri>
       <name>tunel</name>
       <pose>-18.585091821299244 0.89085390916381824 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/tunel</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/tunel</uri>
       <name>tunel_0</name>
       <pose>27.023598720464566 9.4946881823659357 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sola_mecburi</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/sola_mecburi</uri>
       <name>sola_mecburi</name>
       <pose>47.542598724365234 13.166600227355957 0 0 0 1.6209210873125985</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yeri</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yeri</uri>
       <name>park_yeri</name>
       <pose>33.478801727294922 -77.750900268554688 0 0 0 1.5569856221732958</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yeri</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yeri</uri>
       <name>park_yeri_0</name>
       <pose>29.075799942016602 -77.846000671386719 0 0 0 1.5834751950832771</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yeri</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yeri</uri>
       <name>park_yeri_1</name>
       <pose>25.192100524902344 -77.93499755859375 0 0 0 1.6052076382958553</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yeri</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yeri</uri>
       <name>park_yeri_2</name>
       <pose>8.9960098266601562 -77.655899047851562 0 0 0 1.5691756960931018</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yapilmaz</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yapilmaz</uri>
       <name>park_yapilmaz</name>
       <pose>17.251762390136719 -77.713630676269531 0 0 0 1.5446400052404645</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yapilmaz</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yapilmaz</uri>
       <name>park_yapilmaz_0</name>
       <pose>12.999500274658203 -77.689903259277344 0 0 0 1.5768943109040798</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yapilmaz</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yapilmaz</uri>
       <name>park_yapilmaz_1</name>
       <pose>21.345500946044922 -77.773597717285156 0 0 0 1.576919346272964</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/park_yapilmaz</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/park_yapilmaz</uri>
       <name>park_yapilmaz_2</name>
       <pose>37.127399444580078 -77.717697143554688 0 0 0 1.5593144509498418</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_cone</uri>
       <name>traffic_cone</name>
       <pose>25.926326996957258 19.452180500700294 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_cone</uri>
       <name>traffic_cone_0</name>
       <pose>25.973527951162051 20.087473180794717 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_cone</uri>
       <name>traffic_cone_1</name>
       <pose>26.059315281973607 20.75485639546244 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_cone</uri>
       <name>traffic_cone_2</name>
       <pose>25.892039389447376 21.612924291936967 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/traffic_cone</uri>
       <name>traffic_cone_3</name>
       <pose>24.865566982384649 21.733112276726388 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/saga_donulmez</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/saga_donulmez</uri>
       <name>saga_donulmez</name>
       <pose>25.791000366210938 18.105899810791016 0 0 0 -1.5394454577597889</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/gidis_gelis</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/gidis_gelis</uri>
       <name>gidis_gelis</name>
       <pose>25.444447529205817 26.051460582423942 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sagdan_gidin</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/sagdan_gidin</uri>
       <name>sagdan_gidin</name>
       <pose>-7.2653097228200281 -18.333708716522899 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sagdan_gidin</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/sagdan_gidin</uri>
       <name>sagdan_gidin_0</name>
       <pose>-12.272252082824707 -13.754071235656738 0 0 0 1.5369400024285722</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sagdan_gidin</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/sagdan_gidin</uri>
       <name>sagdan_gidin_1</name>
       <pose>-16.892172240397691 -18.447215505310755 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sagdan_gidin</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/sagdan_gidin</uri>
       <name>sagdan_gidin_2</name>
       <pose>-12.187546730041504 -23.046276092529297 0 0 0 1.5864399632229254</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/saga_donulmez</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/saga_donulmez</uri>
       <name>saga_donulmez_0</name>
       <pose>26.517962236059137 -39.546736632517174 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sola_donulmez</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/sola_donulmez</uri>
       <name>sola_donulmez</name>
       <pose>26.898099091514446 -14.111856825308676 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/durak</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/durak</uri>
       <name>durak</name>
       <pose>0.68867765882772147 26.154963572765787 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/durak</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/durak</uri>
       <name>durak_0</name>
       <pose>-39.011001586914062 12.549599647521973 0 0 0 1.7097554124844934</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/girilmez</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/girilmez</uri>
       <name>girilmez</name>
       <pose>-23.80620002746582 -14.254682540893555 0 0 0 0</pose>
     </include>
     <include>
-      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/doner_kavsak</uri>
+      <uri>file:///home/aaltindas/simulation_architecture/otonom_projem/models/doner_kavsak</uri>
       <name>doner_kavsak_2</name>
       <pose>-23.615767931795109 -22.414463801883624 0 0 0 0</pose>
     </include>

@@ -81,7 +81,7 @@ def generate_launch_description():
         TimerAction(period=6.0, actions=[
             Node(package='araba', executable='camera_perception_node', name='camera_perception_node',
                  output='screen', parameters=[{'use_sim_time': True, 'model_path': detection_model_path,
-                                               'show_window': False}]),
+                                               'show_window': True}]),
         ]),
 
         TimerAction(period=6.5, actions=[

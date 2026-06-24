@@ -17,9 +17,12 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     pkg_share = get_package_share_directory('araba')
+    # otonom_projem/models yolu workspace kökünden türetilir (kullanıcı adından bağımsız).
+    # pkg_share = <ws>/install/share/araba -> dört üst dizin = workspace kökü
+    ws_root = os.path.abspath(os.path.join(pkg_share, '..', '..', '..', '..'))
     gz_resource_path = ':'.join([
         os.path.dirname(pkg_share),
-        '/home/aaltindas/sim_ws/otonom_projem/models',
+        os.path.join(ws_root, 'otonom_projem', 'models'),
     ])
 
     world_path = os.path.join(pkg_share, 'worlds', 'benim_dunyam.sdf')
@@ -53,7 +56,7 @@ def generate_launch_description():
 
         Node(package='ros_gz_sim', executable='create', output='screen',
              arguments=['-name', 'araba', '-topic', 'robot_description',
-                        '-x', '44.498', '-y', '-69.858', '-z', '0.28', '-Y', '1.58']),
+                        '-x', '45.31', '-y', '16', '-z', '0.51', '-Y', '1.58']),
 
         Node(package='rviz2', executable='rviz2', output='screen',
              arguments=['-d', rviz_config], parameters=[{'use_sim_time': True}]),

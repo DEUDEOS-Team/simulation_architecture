@@ -59,6 +59,16 @@ install(PROGRAMS
   RENAME keyboard_teleop
 )
 
+# NOT: DENEME node'ları — RENAME YOK. Böylece --symlink-install gerçek symlink kurar ve
+# kod değişiklikleri yeniden derleme olmadan anında geçerli olur.
+# Çalıştırma: ros2 run araba <ad>.py  (launch'ta executable='<ad>.py')
+install(PROGRAMS
+  scripts/lane_test_node.py
+  scripts/lane_yolo_node.py
+  scripts/autonomous_control_node.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 # ── Algoritma modülleri (pure Python, import edilebilir) ──
 install(PROGRAMS
   scripts/safety_logic.py

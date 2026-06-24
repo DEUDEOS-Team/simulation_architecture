@@ -1,6 +1,33 @@
-build/
-install/
-log/
+# ── ROS 2 / colcon üretilen dizinler (derlemeyle yeniden oluşur) ──
+/build/
+/install/
+/log/
+# iç içe CMake derleme dizinleri (ör. models/traffic_light/build)
+**/build/
+
+# ── Yerel araç ayarları (paylaşılmamalı) ──
+.claude/
+.mcp.json
+
+# ── Toplanan veri (büyük, kod değil; ayrı tutulur) ──
+/dataset/
+*.zip
+
+# ── Python ──
 __pycache__/
-*.pyc
-*Zone.Identifier
+*.py[cod]
+*.egg-info/
+
+# ── Editör/OS ──
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# ── Windows indirme artıkları ──
+*:Zone.Identifier
+
+# ── Ağır arşiv/yedek klasörler (repoyu şişirmesin) ──
+# İstersen bu iki satırı silip repoya dahil edebilirsin:
+/arsiv_kullanilmayan/
+/yedek_arabalar/

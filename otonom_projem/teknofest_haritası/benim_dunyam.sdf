@@ -140,7 +140,7 @@
             <diffuse>1 1 1 1</diffuse>
             <pbr>
               <metal>
-                <albedo_map>map.jpeg</albedo_map>
+                <albedo_map>map_clean.png</albedo_map>
               </metal>
             </pbr>
           </material>

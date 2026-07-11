@@ -54,6 +54,25 @@ TURN_MIN_ANGLE_DEG = 35.0        # bacaklar arası açı eşiği: üstü "dönü
 TURN_ENGAGE_DISTANCE_M = 10.0    # dönüş noktasına bu mesafede öncelik başlar
 TURN_EXIT_ALIGN_DEG = 25.0       # waypoint geçilip yeni bacağa bu kadar hizalanınca biter
 
+# Kavşak dönüş YAYI: köşe waypoint'ine kilitlenmek yerine giriş/çıkış bacaklarına
+# teğet dairesel yay çizilir ve o izlenir. Köşeye nişan almak, hedef tam önde
+# olduğundan köşe üstüne binene dek sıfır direksiyon üretiyordu (canlı 2026-07-11:
+# 10 sn düz + ani -1.00 kilit -> geniş süpürme, şerit dışı).
+TURN_ARC_RADIUS_M = 4.0          # yay yarıçapı (araç min dönüş yarıçapı ~2.9 m + takip marjı)
+TURN_ARC_LOOKAHEAD_M = 2.5       # yay üzerinde nişan alınan ileri nokta
+TURN_ARC_PRE_M = 12.0            # yay öncesi düz koşu (yaklaşırken projeksiyon için)
+TURN_ARC_POST_M = 8.0            # yay sonrası düz koşu (çıkışta lookahead için)
+# Köşe kesme sınırı: apeks köşe düğümünün en fazla bu kadar içinden geçsin
+# (şerit yarı genişliği 1.45 - araç yarısı ~0.65 - pay). Aşarsa yay, açıortay
+# boyunca DIŞA kaydırılır; kayma giriş/çıkış hattını da yandan en fazla
+# TURN_ARC_MAX_OUT_SWING_M kaydırabilir (dıştan al - içten çık, sürücü kalıbı).
+# Canlı 2026-07-11: 1.66 m'lik kesme iç şerit çizgisine bastırıyordu.
+TURN_ARC_MAX_INNER_CUT_M = 0.7
+TURN_ARC_MAX_OUT_SWING_M = 0.65
+EARTH_R_M = 6371000.0
+WHEELBASE_M = 1.675              # araç dingil mesafesi (URDF)
+MAX_STEER_RAD = 0.5236           # tam kilit tekerlek açısı (vehicle_controller ile aynı)
+
 # Rotadan sapma bekçisi: aktif hedefe mesafe, o hedef için görülen minimumdan bu
 # kadar artarsa dönüş kaçırılmıştır -> mevcut konumdan rota yeniden planlanır.
 OFF_ROUTE_MARGIN_M = 10.0
@@ -165,6 +184,10 @@ class MissionPlanningNode(Node):
         # Kavşak dönüş durumu (vehicle_controller'a PLAN önceliği sinyali)
         self._turn_active: bool = False
         self._turn_wp_index: int | None = None
+        self._turn_path: list | None = None            # dönüş yayı ENU noktaları (köşe=origin)
+        self._turn_path_origin: tuple | None = None    # yay ENU çerçevesinin (lat, lon) orijini
+        self._turn_arc_s_exit: float = 0.0             # yay bitiş (T2) kümülatif mesafesi
+        self._turn_arc_s_here: float = 0.0             # aracın yay üzerindeki son ilerlemesi
         self._curve_skip_logged_idx: int = -1  # viraj-atlandı logu wp başına bir kez
         self._plan_points: list = []  # aktif planın noktaları (dönüş geometrisi için)
         # Rotadan sapma bekçisi durumu
@@ -339,6 +362,10 @@ class MissionPlanningNode(Node):
         """Replan sonrası: waypoint indeksleri değişti, dönüş/sapma takibini sıfırla."""
         self._turn_active = False
         self._turn_wp_index = None
+        self._turn_path = None
+        self._turn_path_origin = None
+        self._turn_arc_s_exit = 0.0
+        self._turn_arc_s_here = 0.0
         self._min_dist_to_wp = float("inf")
         self._min_dist_wp_idx = -1
 
@@ -358,6 +385,133 @@ class MissionPlanningNode(Node):
         except Exception:
             return True
 
+    @staticmethod
+    def _ll_to_enu_m(lat: float, lon: float, lat0: float, lon0: float) -> tuple[float, float]:
+        """(lat,lon) -> (E,N) metre, (lat0,lon0) orijinli eş-dikdörtgen yaklaşım."""
+        dn = math.radians(float(lat) - float(lat0)) * EARTH_R_M
+        de = math.radians(float(lon) - float(lon0)) * EARTH_R_M * math.cos(math.radians(float(lat0)))
+        return de, dn
+
+    def _build_turn_arc(self, cur, nxt, leg_in_deg: float, turn_deg: float) -> None:
+        """
+        Giriş/çıkış bacaklarına teğet dairesel yay üretir (kullanıcı önerisi
+        2026-07-11: dönüş, köşe noktası yerine giriş->çıkış arasında tanımlı bir
+        rota üzerinden takip edilsin). Yay köşeden önce başladığından araç
+        direksiyonu erken kırar ve şeritte kalır. Nokta listesi köşe-orijinli
+        ENU'dur; başına/sonuna düz koşular eklenir.
+        """
+        lat0, lon0 = float(cur.lat), float(cur.lon)
+        ex, ny = self._ll_to_enu_m(float(nxt.lat), float(nxt.lon), lat0, lon0)
+        leg_out_len = math.hypot(ex, ny)
+        if leg_out_len < 1.0:
+            self._turn_path = None
+            self._turn_path_origin = None
+            return
+        b_in = math.radians(float(leg_in_deg))
+        u_in = (math.sin(b_in), math.cos(b_in))          # pusula -> ENU birim vektör
+        u_out = (ex / leg_out_len, ny / leg_out_len)
+        theta = math.radians(min(170.0, abs(float(turn_deg))))
+        r = TURN_ARC_RADIUS_M
+        t = r * math.tan(theta / 2.0)
+        t_max = max(2.0, 0.6 * leg_out_len)              # çıkış bacağından taşma
+        if t > t_max:
+            t = t_max
+            r = t / math.tan(theta / 2.0)
+        left = float(turn_deg) < 0.0                     # pusulada negatif fark = sola
+        # Köşe kesme derinliği: apeksin köşeden içeri girme mesafesi.
+        # Sınırı aşarsa köşeyi açıortay boyunca dışa kaydır (kesme tarafının tersi).
+        depth = r * (1.0 / max(1e-6, math.cos(theta / 2.0)) - 1.0)
+        d_out = max(0.0, depth - TURN_ARC_MAX_INNER_CUT_M)
+        sin_half = math.sin(theta / 2.0)
+        if sin_half > 1e-6:
+            d_out = min(d_out, TURN_ARC_MAX_OUT_SWING_M / sin_half)
+        bx, by = u_out[0] - u_in[0], u_out[1] - u_in[1]  # açıortay (kesme tarafına bakar)
+        bl = math.hypot(bx, by)
+        ox, oy = ((-bx / bl * d_out, -by / bl * d_out) if (bl > 1e-6 and d_out > 0.0) else (0.0, 0.0))
+        t1 = (ox - u_in[0] * t, oy - u_in[1] * t)        # giriş teğet noktası
+        t2 = (ox + u_out[0] * t, oy + u_out[1] * t)      # çıkış teğet noktası
+        nrm = (-u_in[1], u_in[0]) if left else (u_in[1], -u_in[0])
+        cx, cy = t1[0] + nrm[0] * r, t1[1] + nrm[1] * r  # yay merkezi
+        a1 = math.atan2(t1[1] - cy, t1[0] - cx)
+        a2 = math.atan2(t2[1] - cy, t2[0] - cx)
+        sweep = a2 - a1
+        if left and sweep < 0.0:
+            sweep += 2.0 * math.pi
+        if not left and sweep > 0.0:
+            sweep -= 2.0 * math.pi
+        pts: list[tuple[float, float]] = []
+        n_pre = max(1, int(TURN_ARC_PRE_M / 2.0))
+        for i in range(n_pre, 0, -1):
+            # Dışa kayma yaklaşma boyunca 0 -> tam değere rampalanır: uzak uçta
+            # şerit merkezinde kal, T1'e doğru yumuşakça dışa süzül (ani kırış olmasın).
+            back = 2.0 * i
+            scale = max(0.0, 1.0 - back / TURN_ARC_PRE_M)
+            px_ = ox * scale - u_in[0] * (t + back)
+            py_ = oy * scale - u_in[1] * (t + back)
+            pts.append((px_, py_))
+        n_arc = max(4, int(abs(sweep) * r))              # ~1 m aralıklı örnekleme
+        for i in range(n_arc + 1):
+            a = a1 + sweep * i / n_arc
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        s_exit = 0.0  # T2'ye kadar kümülatif yol (pre + yay) — dönüş bitiş eşiği
+        for i in range(len(pts) - 1):
+            s_exit += math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+        n_post = max(1, int(TURN_ARC_POST_M / 2.0))
+        for i in range(1, n_post + 1):
+            pts.append((t2[0] + u_out[0] * 2.0 * i, t2[1] + u_out[1] * 2.0 * i))
+        self._turn_path = pts
+        self._turn_path_origin = (lat0, lon0)
+        self._turn_arc_s_exit = s_exit
+        self._turn_arc_s_here = 0.0
+
+    def _turn_arc_steering(self, pos: GpsPosition) -> float | None:
+        """Dönüş yayı üzerinde lookahead noktasına nişan + yaydan yanal sapma düzeltmesi."""
+        if not self._turn_path or self._turn_path_origin is None:
+            return None
+        lat0, lon0 = self._turn_path_origin
+        px, py = self._ll_to_enu_m(pos.lat, pos.lon, lat0, lon0)
+        pts = self._turn_path
+        best = None  # (d2, s_projeksiyon, segment_birim, projeksiyon_noktası)
+        s_acc = 0.0
+        for i in range(len(pts) - 1):
+            ax, ay = pts[i]
+            bx, by = pts[i + 1]
+            dx, dy = bx - ax, by - ay
+            seg = math.hypot(dx, dy)
+            if seg < 1e-9:
+                continue
+            tt = max(0.0, min(1.0, ((px - ax) * dx + (py - ay) * dy) / (seg * seg)))
+            qx, qy = ax + tt * dx, ay + tt * dy
+            d2 = (px - qx) ** 2 + (py - qy) ** 2
+            if best is None or d2 < best[0]:
+                best = (d2, s_acc + tt * seg, (dx / seg, dy / seg), (qx, qy))
+            s_acc += seg
+        if best is None:
+            return None
+        total_s = s_acc
+        _, s_here, seg_u, proj = best
+        self._turn_arc_s_here = float(s_here)
+        s_target = min(total_s, s_here + TURN_ARC_LOOKAHEAD_M)
+        tx, ty = pts[-1]
+        s_acc = 0.0
+        for i in range(len(pts) - 1):
+            seg = math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+            if s_acc + seg >= s_target and seg > 1e-9:
+                f = (s_target - s_acc) / seg
+                tx = pts[i][0] + f * (pts[i + 1][0] - pts[i][0])
+                ty = pts[i][1] + f * (pts[i + 1][1] - pts[i][1])
+                break
+            s_acc += seg
+        # Pure pursuit: hedefe bakış açısından gereken eğrilik -> tekerlek açısı.
+        # Düz-bacak kazancı (b_err/90) 3.5 m'lik yayı süremez: yay ~0.85 oran ister,
+        # küçük açı hatası o kazançla asla üretemez (birim test 2026-07-11).
+        des_bearing = math.degrees(math.atan2(tx - px, ty - py))  # atan2(E,N) = pusula
+        alpha = math.radians(_angle_diff_deg(des_bearing, float(pos.heading_deg)))  # + = sağda
+        ld = max(1.0, math.hypot(tx - px, ty - py))
+        kappa = 2.0 * math.sin(alpha) / ld
+        delta = math.atan(kappa * WHEELBASE_M)           # + = sağ teker açısı
+        return max(-1.0, min(1.0, delta / MAX_STEER_RAD))
+
     def _update_turn_state(self, wp_state) -> None:
         """
         Kavşak dönüş tespiti. Giriş bacağı ROTA GEOMETRİSİNDEN alınır (önceki wp ->
@@ -373,13 +527,23 @@ class MissionPlanningNode(Node):
 
         if self._turn_active:
             if self._turn_wp_index is not None and idx != self._turn_wp_index:
-                if abs(float(wp_state.bearing_error_deg)) <= TURN_EXIT_ALIGN_DEG:
+                # Bitiş: yeni bacağa hizalanma YA DA yayın çıkış teğetini (T2) geçme.
+                # Yalnız hizalanma beklemek devri geciktiriyordu: araç yola oturduğu
+                # hâlde waypoint yanda kaldığından b_err geç küçülür (kullanıcı 2026-07-11).
+                arc_done = (
+                    self._turn_path is not None
+                    and self._turn_arc_s_here >= self._turn_arc_s_exit
+                )
+                if abs(float(wp_state.bearing_error_deg)) <= TURN_EXIT_ALIGN_DEG or arc_done:
                     self.get_logger().info(
-                        f"DÖNÜŞ bitti: wp[{idx}] yeni bacağa hizalandı "
+                        f"DÖNÜŞ bitti: wp[{idx}] "
+                        f"{'yay tamamlandı' if arc_done else 'yeni bacağa hizalandı'} "
                         f"(b_err={wp_state.bearing_error_deg:+.0f}°)"
                     )
                     self._turn_active = False
                     self._turn_wp_index = None
+                    self._turn_path = None
+                    self._turn_path_origin = None
             return
 
         cur = wp_state.current_wp
@@ -404,9 +568,16 @@ class MissionPlanningNode(Node):
                 return
             self._turn_active = True
             self._turn_wp_index = idx
+            try:
+                self._build_turn_arc(cur, nxt, leg_in, turn_deg)
+            except Exception as e:
+                self._turn_path = None
+                self._turn_path_origin = None
+                self.get_logger().warn(f"Dönüş yayı üretilemedi ({e}) — wp steering'e düşüldü")
             self.get_logger().info(
                 f"DÖNÜŞ başlıyor: wp[{idx}] '{cur.name}' açı={turn_deg:+.0f}° "
-                f"mesafe={wp_state.distance_to_wp_m:.1f}m"
+                f"mesafe={wp_state.distance_to_wp_m:.1f}m "
+                f"yay={'ok (%d nokta)' % len(self._turn_path) if self._turn_path else 'yok'}"
             )
 
     def _offroute_watchdog(self, pos: GpsPosition, wp_state, park_mode: bool):
@@ -634,6 +805,10 @@ class MissionPlanningNode(Node):
         self._update_turn_state(wp_state)
 
         steer = float(wp_state.steering_ref)
+        if self._turn_active:
+            _arc_steer = self._turn_arc_steering(pos)
+            if _arc_steer is not None:
+                steer = float(_arc_steer)
         base_speed = float(wp_state.speed_limit_ratio) * float(mission_dec.speed_cap_ratio)
         steer, turn_speed_mul = self._apply_turn_permissions(steer, float(wp_state.distance_to_wp_m))
         base_speed *= float(turn_speed_mul)

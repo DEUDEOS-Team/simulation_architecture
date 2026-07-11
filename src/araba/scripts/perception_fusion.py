@@ -108,6 +108,7 @@ def parking_detections_from_signs(sign_dets: list[SignDetection]) -> list[Parkin
                     bbox_px=s.bbox_px,
                     confidence=s.confidence,
                     parking_allowed=True,
+                    estimated_distance_m=s.estimated_distance_m,
                 )
             )
         elif s.class_name == SignClass.NO_PARKING:
@@ -116,6 +117,7 @@ def parking_detections_from_signs(sign_dets: list[SignDetection]) -> list[Parkin
                     bbox_px=s.bbox_px,
                     confidence=s.confidence,
                     parking_allowed=False,
+                    estimated_distance_m=s.estimated_distance_m,
                 )
             )
     return out

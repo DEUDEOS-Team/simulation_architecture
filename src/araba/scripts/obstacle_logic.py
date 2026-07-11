@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from deos_algorithms.safety_logic import (
+    CORRIDOR_HALF_WIDTH_M,
     SafetyLogic,
     Detection as SafetyDetection,
     ThreatLevel,
@@ -53,6 +54,14 @@ STATIC_AVOID_SWITCH_MARGIN_M = 0.6  # zıt tarafa geçmek için "daha belirgin" 
 # Dinamik engelde dur-bekle sonrası kaçınma geçişi için minimum bekleme süresi.
 # Tick sayısına değil time.monotonic()'e dayandığı için ROS node Hz'inden bağımsız.
 DYNAMIC_AVOID_HOLD_S = 0.4
+
+# Yol-kapalı (road_blocked) kararı: "barrier_count > 1" tek başına yetmez —
+# tünel giriş duvarları da ≥1.5 m çapla "barrier" sınıflanıp 20 m öteden yolu
+# kapalı gösteriyordu (canlı 2026-07-11: karanlik_tunel yaklaşımında REPLAN
+# fırtınası). Kapalı ilanı için bariyerler YAKIN olmalı ve aralarında araç
+# sığacak yanal boşluk OLMAMALI (tünel ağzı ortası açık -> geçit sayılır).
+ROAD_BLOCKED_MAX_DISTANCE_M = 8.0
+ROAD_BLOCKED_MIN_GAP_M = 1.8
 
 
 def classify_obstacle(class_name: str) -> Optional[str]:
@@ -238,8 +247,7 @@ class ObstacleLogic:
             self._static_commit_frames_left = 0
 
         if nearest.distance_m > STATIC_LANE_CHANGE_TRIGGER_M:
-            barrier_count = sum(1 for threat in static_threats if threat.detection.class_name == ObstacleKind.BARRIER)
-            state.road_blocked = barrier_count > 1
+            state.road_blocked = self._is_road_blocked(static_threats)
             return
 
         # Sıralı engellerde zigzag'ı azaltmak için yönü "commit" et:
@@ -281,8 +289,27 @@ class ObstacleLogic:
             # For static avoidance beyond the hard emergency distance, do not keep a full stop cap.
             state.speed_cap_ratio = max(state.speed_cap_ratio, STATIC_LANE_CHANGE_SPEED_CAP)
 
-        barrier_count = sum(1 for threat in static_threats if threat.detection.class_name == ObstacleKind.BARRIER)
-        state.road_blocked = barrier_count > 1
+        state.road_blocked = self._is_road_blocked(static_threats)
+
+    @staticmethod
+    def _is_road_blocked(static_threats: list[ThreatObservation]) -> bool:
+        """
+        Yol gerçekten kapalı mı? En az iki YAKIN bariyer olmalı ve sıralı yanal
+        konumları (koridor kenarları dahil) arasında araç sığacak boşluk
+        kalmamalı. Aralarında ROAD_BLOCKED_MIN_GAP_M+ boşluk varsa (tünel ağzı,
+        kapı gibi) yol geçilebilirdir.
+        """
+        barriers = [
+            t for t in static_threats
+            if t.detection.class_name == ObstacleKind.BARRIER
+            and float(t.distance_m) <= ROAD_BLOCKED_MAX_DISTANCE_M
+        ]
+        if len(barriers) < 2:
+            return False
+        lats = sorted(float(t.lateral_m) for t in barriers)
+        bounds = [-CORRIDOR_HALF_WIDTH_M] + lats + [CORRIDOR_HALF_WIDTH_M]
+        widest_gap = max(b - a for a, b in zip(bounds, bounds[1:]))
+        return widest_gap < ROAD_BLOCKED_MIN_GAP_M
 
     @staticmethod
     def _nearest(threats: list[ThreatObservation]) -> Optional[ThreatObservation]:

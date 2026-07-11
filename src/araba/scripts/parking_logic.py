@@ -20,11 +20,14 @@ from dataclasses import dataclass
 from typing import Optional
 
 
-CAMERA_HEIGHT_M = 1.2
-# stereo_detector_node varsayılanlarıyla eşleştirildi: image_width=640, image_height=480, focal_length_px=320
-CAMERA_FOCAL_PX = 320.0
-PRINCIPAL_POINT_Y_PX = 240.0   # 480 / 2
-IMAGE_WIDTH_PX = 640
+# Sim kamerasıyla eşleştirildi (URDF: 1280x720, HFOV 1.2113 -> fx≈917.4, z=0.948).
+# Eski değerler (640x480, fx=320) mesafeyi ~3 kat yanlış kestiriyordu; faz eşikleri
+# hiç tetiklenmedi ve araç cep sırası boyunca tabela kovaladı (canlı 2026-07-11).
+# Bunlar yalnızca stereo/lidar mesafesi yokken kullanılan YEDEK kestirimlerdir.
+CAMERA_HEIGHT_M = 0.948
+CAMERA_FOCAL_PX = 917.4
+PRINCIPAL_POINT_Y_PX = 360.0   # 720 / 2
+IMAGE_WIDTH_PX = 1280
 
 MIN_CONFIDENCE = 0.40
 APPROACH_TRIGGER_M = 8.0
@@ -43,6 +46,12 @@ SEARCH_STEER_AMPL = 0.20
 SEARCH_TOGGLE_FRAMES = 25
 
 PARK_CONFIRM_FRAMES = 20
+
+# Hedef kilidi: seçilen slot tabelası kareler arası bbox merkez yakınlığıyla takip
+# edilir; kilit varken daha "iyi" görünen başka tabelaya atlanmaz (cep sırasında
+# tabela kovalamayı keser). Kilit LOCK_MISS_FRAMES kare eşleşmezse bırakılır.
+LOCK_MATCH_PX = 200.0
+LOCK_MISS_FRAMES = 10
 
 
 class ParkType:
@@ -65,6 +74,8 @@ class ParkingDetection:
     park_type: str = ParkType.PERPENDICULAR
     # True: park yeri tabelası / izinli slot; False: park yasak tabelası; None: belirsiz → kullanılmaz
     parking_allowed: bool | None = None
+    # Stereo/lidar mesafesi (m) — varsa bbox tabanlı kestirime tercih edilir
+    estimated_distance_m: Optional[float] = None
 
 
 @dataclass
@@ -86,6 +97,49 @@ class ParkingLogic:
         self._phase: str = ParkPhase.WAITING
         self._park_confirm: int = 0
         self._search_frames: int = 0
+        self._lock_center: Optional[tuple[float, float]] = None
+        self._lock_miss: int = 0
+
+    @staticmethod
+    def _bbox_center(d: ParkingDetection) -> tuple[float, float]:
+        x1, y1, x2, y2 = d.bbox_px
+        return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
+    def _select_spot(self, eligible: list[ParkingDetection]) -> ParkingDetection:
+        """
+        Hedef kilidi: kilitli slot varsa kareler arası en yakın bbox ile takip et;
+        yoksa en yakın (mesafesi bilinen) ya da görüntüde en alttaki adayı seç.
+        Her karede "en iyi" adaya atlamak cep sırasında slot değiştirtiyordu.
+        """
+        if self._lock_center is not None:
+            lx, ly = self._lock_center
+
+            def _cd(d: ParkingDetection) -> float:
+                cx, cy = self._bbox_center(d)
+                return ((cx - lx) ** 2 + (cy - ly) ** 2) ** 0.5
+
+            cand = min(eligible, key=_cd)
+            if _cd(cand) <= LOCK_MATCH_PX:
+                self._lock_miss = 0
+                self._lock_center = self._bbox_center(cand)
+                return cand
+            self._lock_miss += 1
+            if self._lock_miss <= LOCK_MISS_FRAMES:
+                # Kilitli hedef bu karede eşleşmedi: rastgele başka slota atlama,
+                # mevcut en yakın adayı geçici olarak kullan ama kilidi kaydırma.
+                return cand
+            self._lock_center = None
+            self._lock_miss = 0
+
+        with_dist = [d for d in eligible if d.estimated_distance_m is not None]
+        spot = (
+            min(with_dist, key=lambda d: float(d.estimated_distance_m))
+            if with_dist
+            else max(eligible, key=lambda d: d.bbox_px[3])
+        )
+        self._lock_center = self._bbox_center(spot)
+        self._lock_miss = 0
+        return spot
 
     def update(self, detections: list[ParkingDetection]) -> ParkState:
         valid = [d for d in detections if d.confidence >= MIN_CONFIDENCE]
@@ -96,7 +150,7 @@ class ParkingLogic:
         # Uygun aday görünmeye başladı: arama sayacını sıfırla
         self._search_frames = 0
 
-        spot = max(eligible, key=lambda d: d.bbox_px[3])
+        spot = self._select_spot(eligible)
         dist = self._estimate_distance(spot)
         lateral = self._estimate_lateral(spot, dist) if dist is not None else None
 
@@ -191,6 +245,9 @@ class ParkingLogic:
         return max(-1.0, min(1.0, -lateral * LATERAL_GAIN))
 
     def _estimate_distance(self, det: ParkingDetection) -> Optional[float]:
+        # Stereo/lidar mesafesi güvenilirdir; bbox tabanlı kestirim yalnızca yedek.
+        if det.estimated_distance_m is not None and 0.0 < float(det.estimated_distance_m) <= 50.0:
+            return float(det.estimated_distance_m)
         y2 = det.bbox_px[3]
         dy = y2 - PRINCIPAL_POINT_Y_PX
         if dy <= 0:
@@ -246,4 +303,6 @@ class ParkingLogic:
         self._phase = ParkPhase.WAITING
         self._park_confirm = 0
         self._search_frames = 0
+        self._lock_center = None
+        self._lock_miss = 0
 

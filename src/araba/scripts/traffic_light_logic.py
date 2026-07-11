@@ -73,6 +73,14 @@ STATIONARY_SPEED_EPS_MPS = 0.08
 # kilidi bırak (tam ışık döngüsünden uzun olmalı; araç sonsuza dek beklemesin)
 RED_LATCH_TIMEOUT_S = 45.0
 
+# Bayat YEŞİL: kavşağa yaklaşırken yeşil görülüp ışık görüş dışına çıkarsa
+# (yakında direk kadraj dışı kalır) faz değişimi görülemez — kırmızıya dönmüş
+# olabilir. Bellek düştükten sonra bu pencere boyunca sürünme tavanı uygula;
+# pencere dolunca kavşak geçilmiş sayılır (canlı 2026-07-11: 2. ışıkta dönüş
+# sırasında 8 sn'lik körlük yaşandı).
+GREEN_STALE_WINDOW_S = 6.0
+GREEN_STALE_SPEED_RATIO = 0.5
+
 
 @dataclass
 class LightDetection:
@@ -139,6 +147,8 @@ class TrafficLightLogic:
         # Kırmızı kilidi: kırmızıda dur kararı verildikten sonra onaylı YEŞİL'e dek tut
         self._red_latched: bool = False
         self._red_latched_since: Optional[float] = None
+        # Bayat yeşil takibi: onaylı yeşilin bellekten düştüğü an
+        self._green_lost_at: Optional[float] = None
 
     def update(
         self,
@@ -157,11 +167,15 @@ class TrafficLightLogic:
         if LightColor.GREEN in active_colors:
             if self._green_started_at is None:
                 self._green_started_at = now
+            self._green_lost_at = None
         else:
+            if self._green_started_at is not None and self._green_lost_at is None:
+                self._green_lost_at = now  # onaylı yeşil görüşten/bellekten düştü
             self._green_started_at = None
 
         state = self._decide(active, vehicle_speed_mps=vehicle_speed_mps, now=now)
-        return self._apply_red_latch(state, active, now)
+        state = self._apply_red_latch(state, active, now)
+        return self._apply_stale_green(state, active, now)
 
     def reset(self) -> None:
         self._memories.clear()
@@ -169,6 +183,24 @@ class TrafficLightLogic:
         self._green_started_at = None
         self._red_latched = False
         self._red_latched_since = None
+        self._green_lost_at = None
+
+    def _apply_stale_green(self, state: TrafficLightState, active: list[_LightMemory], now: float) -> TrafficLightState:
+        """
+        Yeşil görülüp ışık görüş dışına çıktıysa faz değişimi izlenemez: pencere
+        boyunca sürünme tavanı uygula, yeniden onaylı renk gelirse normal karar
+        zaten baskındır. Kırmızı kilidi/dur kararlarını asla GEVŞETMEZ.
+        """
+        if self._green_lost_at is None or self._red_latched or state.must_stop or active:
+            return state
+        dt = now - self._green_lost_at
+        if dt <= GREEN_STALE_WINDOW_S:
+            state.speed_cap_ratio = min(state.speed_cap_ratio, GREEN_STALE_SPEED_RATIO)
+            extra = "bayat YEŞİL: ışık görüş dışında, kavşak sürünerek geçiliyor"
+            state.reason = f"{state.reason}; {extra}" if state.reason else extra
+        else:
+            self._green_lost_at = None  # pencere doldu: kavşak geçilmiş say
+        return state
 
     def _apply_red_latch(self, state: TrafficLightState, active: list[_LightMemory], now: float) -> TrafficLightState:
         """

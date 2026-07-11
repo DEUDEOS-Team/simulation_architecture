@@ -46,7 +46,8 @@ def generate_launch_description():
     urdf_path = PathJoinSubstitution([FindPackageShare('araba'), 'urdf', 'araba.urdf'])
     rviz_config = os.path.join(pkg_share, 'config', 'lidar_view.rviz')
     detection_model_path = os.path.join(pkg_share, 'models', 'onnx', 'detection.onnx')
-    lane_model_path = os.path.join(pkg_share, 'models', 'onnx', 'lane_seg.onnx')
+    # 2026-07-11: yeni gazeboset yolov8s-seg modeli (model.onnx); eski model lane_seg.onnx'te yedek
+    lane_model_path = os.path.join(pkg_share, 'models', 'onnx', 'model.onnx')
 
     robot_description = ParameterValue(Command(['xacro ', urdf_path]), value_type=str)
 

@@ -52,10 +52,21 @@ class MissionManager:
             self.wp.advance()
             return self.wp.update(pos), dec
 
-        # Park modunu, park giriş noktasına varınca başlat (şartname: park_giris sadece giriş tetikleyicisidir)
-        if (is_park_entry or is_park_task) and state.arrived and not self._park_active:
+        # PARK_ENTRY varışı: şartname sayacını (3 dk) başlat ama kontrolü vizyona
+        # VERME — cep koordinatı rotada zaten var (GeoJSON 'park' hedefi), oraya
+        # kadar waypoint sürüşü devam eder. (Canlı 2026-07-11: girişten itibaren
+        # tabela takibine geçmek aracı cep sırası boyunca gezdirip cebi kaçırttı.)
+        if is_park_entry and state.arrived and not self._park_active:
+            if self._park_started_at is None:
+                self._park_started_at = now_s
+            self.wp.advance()
+            return self.wp.update(pos), dec
+
+        # Park (vizyon) modunu, cep hizasındaki PARK waypoint'ine varınca başlat
+        if is_park_task and state.arrived and not self._park_active:
             self._park_active = True
-            self._park_started_at = now_s
+            if self._park_started_at is None:
+                self._park_started_at = now_s
 
         # Park tamamlandı sinyali gelirse park modunu kapat ve waypoint'i ilerlet
         if self._park_active and self._park_completed:

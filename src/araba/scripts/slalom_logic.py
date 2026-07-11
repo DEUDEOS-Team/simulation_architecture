@@ -9,11 +9,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from deos_algorithms.obstacle_logic import ObstacleDetection, ObstacleKind
-from deos_algorithms.safety_logic import IMAGE_HEIGHT_PX, IMAGE_WIDTH_PX
+from deos_algorithms.obstacle_logic import ObstacleDetection
 
 
 MIN_CONFIDENCE = 0.4
+SLALOM_STATIC_KINDS: frozenset[str] = frozenset({"cone", "barrier", "unknown"})
+LIDAR_LATERAL_MAX_M = 2.0
+LAST_KNOWN_FRAME_ESIK = 5
 MERKEZ_ESIK = 0.15
 VARSAYILAN_TARAF = "sol"
 STEERING_GAIN = 1.2
@@ -56,7 +58,7 @@ class SlalomState:
 
 
 class SlalomLogic:
-    def __init__(self, goruntu_genislik: int = IMAGE_WIDTH_PX, goruntu_yukseklik: int = IMAGE_HEIGHT_PX):
+    def __init__(self, goruntu_genislik: int = 640, goruntu_yukseklik: int = 480):
         self._g_w = goruntu_genislik
         self._g_h = goruntu_yukseklik
 
@@ -67,11 +69,20 @@ class SlalomLogic:
         self._onceki_yakinlik: float = 0.0
         self._s_weave_sign: float = 1.0
         self._tek_taraf_sayac: int = 0
+        self._last_known_koniler: list[ObstacleDetection] = []
+        self._last_known_frames: int = 0
 
     def update(self, detections: list[ObstacleDetection]) -> SlalomState:
         koniler = self._filtrele(detections)
         if not koniler:
-            return self._koni_yok_isle()
+            if self._last_known_koniler and self._last_known_frames < LAST_KNOWN_FRAME_ESIK:
+                self._last_known_frames += 1
+                koniler = self._last_known_koniler
+            else:
+                return self._koni_yok_isle()
+        else:
+            self._last_known_koniler = koniler
+            self._last_known_frames = 0
 
         koniler.sort(key=self._yakinlik_skoru, reverse=True)
         kapi_offset = self._baslangic_kapisi_offset(koniler) if self._gecilen_koni == 0 else None
@@ -110,7 +121,7 @@ class SlalomLogic:
         self._reset()
 
     def _filtrele(self, detections: list[ObstacleDetection]) -> list[ObstacleDetection]:
-        return [d for d in detections if d.kind == ObstacleKind.CONE and d.confidence >= MIN_CONFIDENCE]
+        return [d for d in detections if d.kind in SLALOM_STATIC_KINDS and d.confidence >= MIN_CONFIDENCE]
 
     def _yakinlik_skoru(self, d: ObstacleDetection) -> float:
         if d.estimated_distance_m is not None and d.estimated_distance_m > 0:
@@ -118,6 +129,11 @@ class SlalomLogic:
         return d.bbox_px[3] / self._g_h
 
     def _lateral_offset(self, d: ObstacleDetection) -> float:
+        if d.estimated_lateral_m is not None:
+            # LiDAR lateral ROS konvansiyonunda +SOL; bu modülün offset'i görüntü
+            # konvansiyonunda +SAĞ (bbox dalı ve steering işaretiyle tutarlı olması
+            # için işaret çevrilir — aksi hâlde araç engele DOĞRU kırar).
+            return max(-1.0, min(1.0, -d.estimated_lateral_m / LIDAR_LATERAL_MAX_M))
         x_merkez = (d.bbox_px[0] + d.bbox_px[2]) / 2.0
         return (x_merkez - self._g_w / 2.0) / (self._g_w / 2.0)
 
@@ -238,4 +254,6 @@ class SlalomLogic:
         self._onceki_yakinlik = 0.0
         self._s_weave_sign = 1.0
         self._tek_taraf_sayac = 0
+        self._last_known_koniler = []
+        self._last_known_frames = 0
 

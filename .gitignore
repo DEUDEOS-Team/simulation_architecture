@@ -31,3 +31,7 @@ __pycache__/
 # İstersen bu iki satırı silip repoya dahil edebilirsin:
 /arsiv_kullanilmayan/
 /yedek_arabalar/
+
+# scripts/ içinde yanlışlıkla çalıştırılan colcon artıkları (derlemeyle yeniden oluşur)
+/src/araba/scripts/install/
+/src/araba/scripts/log/

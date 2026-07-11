@@ -1,0 +1,65 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 0,
+        "name": "start",
+        "task": "baslangic"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5084428,
+          40.7898918
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "durak_A",
+        "task": "durak"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5087035,
+          40.7896655
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "durak_B",
+        "task": "durak"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5090536,
+          40.789619
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "park",
+        "task": "park_yeri"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5092463,
+          40.7902655
+        ]
+      }
+    }
+  ]
+}

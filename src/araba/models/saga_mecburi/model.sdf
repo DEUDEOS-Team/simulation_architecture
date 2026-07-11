@@ -46,6 +46,20 @@
         </geometry>
       </collision>
 
+      <!-- Tabelanın Arka Paneli — arka yüzde PNG görünüp algıyı şaşırtmasın diye gri kapak -->
+      <visual name="tabela_arka_visual">
+        <pose>-0.03 0 2.2 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.04 0.8 0.8</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.4 0.4 0.4 1</ambient>
+          <diffuse>0.4 0.4 0.4 1</diffuse>
+        </material>
+      </visual>
+
       <!-- Tabelanın Görseli (İşte PNG Buraya Geliyor) -->
       <visual name="tabela_visual">
         <pose>0 0 2.2 0 0 0</pose>

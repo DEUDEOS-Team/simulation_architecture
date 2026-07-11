@@ -1,0 +1,92 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "generator": "generate_teknofest_geojson.py",
+    "datum": [
+      40.7899,
+      29.5089
+    ]
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 0,
+        "name": "start",
+        "task": "baslangic",
+        "note": "spawn noktasi; A yolu kuzey serit"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5094332,
+          40.7900441
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "durak_1",
+        "task": "durak",
+        "note": "durak levhasi (0.69, 26.15) onu; 1. yol bati serit"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5089082,
+          40.7901161
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "durak_2",
+        "task": "durak",
+        "note": "durak_0 levhasi (-39.01, 12.55) onu; D yolu guney serit"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5084687,
+          40.790013
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "park_giris",
+        "task": "park_giris",
+        "note": "park erisim yoluna donusten hemen sonra (tek cizgi cift yon)"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5090315,
+          40.7894678
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 4,
+        "name": "park",
+        "task": "park_yeri",
+        "note": "park_yeri_1 levhasi onundeki cep; koridordan guneye manevra"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5091986,
+          40.7892516
+        ]
+      }
+    }
+  ]
+}

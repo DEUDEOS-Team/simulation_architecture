@@ -7,8 +7,11 @@ GeoJSON FeatureCollection dosyasından görev noktalarını okur.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+_log = logging.getLogger(__name__)
 
 
 class TaskType:
@@ -56,6 +59,18 @@ _TASK_SYNONYMS: dict[str, str] = {
     "park_giriş": TaskType.PARK_ENTRY,
     "otopark_giris": TaskType.PARK_ENTRY,
     "otopark_giriş": TaskType.PARK_ENTRY,
+    # yolcu alma / bırakma
+    "pickup": TaskType.PICKUP,
+    "yolcu_binimi": TaskType.PICKUP,
+    "yolcu_alma": TaskType.PICKUP,
+    "binme": TaskType.PICKUP,
+    "binis": TaskType.PICKUP,
+    "biniş": TaskType.PICKUP,
+    "dropoff": TaskType.DROPOFF,
+    "yolcu_indirme": TaskType.DROPOFF,
+    "yolcu_birakma": TaskType.DROPOFF,
+    "yolcu_bırakma": TaskType.DROPOFF,
+    "iniş": TaskType.DROPOFF,
     # yol üstü ara nokta (rota zorlaması — tünel ekseni vb.)
     "via": TaskType.CHECKPOINT,
     "ara_nokta": TaskType.CHECKPOINT,
@@ -63,7 +78,7 @@ _TASK_SYNONYMS: dict[str, str] = {
     "tünel": TaskType.CHECKPOINT,
 }
 
-DEFAULT_ARRIVAL_RADIUS_M = 1.0
+DEFAULT_ARRIVAL_RADIUS_M = 3.0  # L86 GPS ~2-5m doğruluk; 1m çok küçük, araç waypoint'e ulaşamaz
 DEFAULT_SPEED_LIMIT_RATIO = 1.0
 
 
@@ -199,7 +214,15 @@ class GeoJsonMissionReader:
                 task = TaskType.PARK_ENTRY
             elif low_name.startswith("park"):
                 task = TaskType.PARK
+            elif low_name.startswith(("pickup", "yolcu_binim", "yolcu_alma", "biniş", "binis")):
+                task = TaskType.PICKUP
+            elif low_name.startswith(("dropoff", "yolcu_indir", "yolcu_birak", "yolcu_bırak", "iniş", "inis")):
+                task = TaskType.DROPOFF
             else:
+                _log.warning(
+                    "Feature index=%d name=%r task=%r tanimsiz — CHECKPOINT olarak isleniyor.",
+                    idx, name, task_raw or "(bos)",
+                )
                 task = TaskType.CHECKPOINT
 
         heading_deg: Optional[float] = None

@@ -38,6 +38,7 @@ class ReasonCode(str, Enum):
 
     # Traffic rules
     LIGHT_MUST_STOP = "light_must_stop"
+    LIGHT_RED_SLOW = "light_red_slow"
     LIGHT_YELLOW_SLOW = "light_yellow_slow"
     SIGN_MUST_STOP = "sign_must_stop"
     SIGN_SPEED_CAP = "sign_speed_cap"
@@ -110,6 +111,16 @@ class FinalDecision:
     reasons: list[ReasonCode]
 
 
+# Steer override öncelik tablosu: düşük sayı = yüksek öncelik.
+# Candidate.name bu tabloda yoksa en düşük öncelik (99) verilir.
+_STEER_PRIORITY: dict[str, int] = {
+    "park": 0,
+    "dynamic_avoid": 1,
+    "static_avoid": 2,
+    "slalom": 3,
+}
+
+
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, float(x)))
 
@@ -139,13 +150,10 @@ class DecisionArbiter:
         emergency = any(c.emergency_stop for c in candidates)
         speed_cap = _clamp01(min((c.speed_cap for c in candidates), default=1.0))
 
-        # Override seçimi: öncelik sırası
-        # Not: PARK > STATIC_AVOID > SLALOM (şartname park sonunda kritik, ama normal sürüşte engel kaçınma daha kritik)
-        steer_src = None
-        for preferred in ("park", "dynamic_avoid", "static_avoid", "slalom"):
-            steer_src = next((c for c in candidates if c.name == preferred and c.steer_override is not None), None)
-            if steer_src is not None:
-                break
+        # Override seçimi: _STEER_PRIORITY tablosuna göre sırala, en yüksek önceliklisini al.
+        steer_candidates = [c for c in candidates if c.steer_override is not None]
+        steer_candidates.sort(key=lambda c: _STEER_PRIORITY.get(c.name, 99))
+        steer_src = steer_candidates[0] if steer_candidates else None
 
         steer = 0.0
         has_steer = False

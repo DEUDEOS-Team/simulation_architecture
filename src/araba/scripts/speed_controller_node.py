@@ -9,10 +9,10 @@ Kullanıcı direksiyonu (angular.z) kontrol eder — bu node SADECE hıza karı�
 Acil durumda hem hız hem direksiyon sıfırlanır.
 
 Mimari:
-  keyboard_teleop → /cmd_vel ──┐
-  perception_pipeline → /perception/* ──┤→ SpeedController → /cmd_vel_filtered → Gazebo
-                                        │
-  (steering korunur, hız sınırlanır)    │
+  autonomous_control (veya teleop) → /cmd_vel_raw ──┐
+  perception_pipeline → /perception/* ──────────────┤→ SpeedController → /cmd_vel → Gazebo
+                                                    │
+  (steering korunur, üstten gelen hız sınırlanır)   │
 
 Bu dosya SADECE altyapıdır — ROS iletişimi ve karar birleştirme.
 Algoritma mantığı logic modüllerinde ve DecisionArbiter'dadır.
@@ -213,26 +213,32 @@ class SpeedControllerNode(Node):
         # ── En kısıtlayıcı hız sınırını uygula ──
         effective_cap = min(speed_caps) if speed_caps else 1.0
 
-        # ── Kullanıcı komutu (SADECE direksiyon) ──
+        # ── Üstten gelen komut (otonom kontrol veya teleop) ──
         user_linear = self._raw_twist.linear.x
         user_angular = self._raw_twist.angular.z
 
-        # Kullanıcı komutu timeout → direksiyon sıfırla
+        # Komut timeout → üst katman sustu: güvenli tarafta kal, dur
         cmd_stale = self._raw_cmd_time is None or (now - self._raw_cmd_time) > 2.0
         if cmd_stale:
             user_angular = 0.0
+            user_linear = 0.0
 
-        # ── Algoritma hedef hızını belirle ──
-        # Geri vites: kullanıcı S tuşuna basarsa manuel geri git
-        # İleri: algoritma otomatik seyir hızı × sınır katsayısı
+        # ── Hedef hızı belirle ──
+        # Üstten gelen hız TEMEL alınır (otonom kontrolün viraj yavaşlaması korunur);
+        # bu node yalnızca güvenlik sınırını (effective_cap) uygular.
         if user_linear < -0.01:
             # Manuel geri vites — hız sınırı uygulanır
             target_linear = -REV_SPEED * effective_cap
         else:
-            # Algoritma kontrollü ileri seyir
-            target_linear = TARGET_CRUISE * effective_cap
-            # Sıfıra çok yakınsa minimum seyir hızını koru (tam durma değilse)
-            if 0.0 < target_linear < MIN_SPEED and not emergency:
+            # Üst katmanın istediği hız × güvenlik katsayısı (MAX_SPEED aşılmaz)
+            target_linear = min(user_linear, MAX_SPEED) * effective_cap
+            # Sıfıra çok yakınsa minimum seyir hızını koru (tam durma değilse).
+            # İSTİSNA: engel kısıtı aktifken taban uygulanmaz — 0.5 m/s tabanı
+            # aracı acil banda kadar engele iteliyordu (bariyer teması).
+            obs_constrains = obs_ok and (
+                self._obs_behavior != 'clear' or self._obs_speed_cap < 1.0)
+            if (user_linear >= MIN_SPEED and 0.0 < target_linear < MIN_SPEED
+                    and not emergency and not obs_constrains):
                 target_linear = MIN_SPEED
 
         # ── Çıkış komutu oluştur ──
@@ -243,8 +249,13 @@ class SpeedControllerNode(Node):
             out.linear.x = 0.0
             out.angular.z = 0.0
         else:
-            # Kullanıcı direksiyonunu aynen koru
-            out.angular.z = user_angular
+            # Direksiyonu, hıza uygulanan oranla ÖLÇEKLE ki yörünge eğriliği
+            # (omega/v) korunsun. Ackermann'da hız düşüp omega aynı kalırsa
+            # direksiyon açısı keskinleşir ve araç viraj içinde yoldan çıkar.
+            if abs(user_linear) > 1e-3:
+                out.angular.z = user_angular * (target_linear / user_linear)
+            else:
+                out.angular.z = user_angular
             out.linear.x = target_linear
 
         self._pub_cmd.publish(out)
@@ -254,7 +265,7 @@ class SpeedControllerNode(Node):
         state_msg.data = (
             f"emergency:{emergency}|"
             f"speed_cap:{effective_cap:.2f}|"
-            f"target:{TARGET_CRUISE:.1f}|"
+            f"target:{user_linear:.2f}|"
             f"cmd_linear:{out.linear.x:.2f}|"
             f"cmd_angular:{out.angular.z:.2f}|"
             f"user_steer:{user_angular:.2f}|"
@@ -287,7 +298,9 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        # Ctrl+C'de launch context'i zaten kapatmış olabilir — çifte shutdown hatası basma
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

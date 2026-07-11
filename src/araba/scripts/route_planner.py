@@ -16,6 +16,7 @@ from deos_algorithms.route_graph import (
     RouteGraph,
     dijkstra,
     dijkstra_mandatory_tunnel,
+    edge_is_tunnel,
     graph_has_tunnel_edges,
     haversine_m,
     nearest_node_id,
@@ -131,6 +132,100 @@ def _leg_path(
     )
 
 
+def _find_edge(graph: RouteGraph, u: int, v: int) -> Edge | None:
+    for e in graph.adj.get(int(u), []):
+        if int(e.v) == int(v):
+            return e
+    return None
+
+
+def _path_uses_tunnel(graph: RouteGraph, path: list[int]) -> bool:
+    for a, b in zip(path, path[1:], strict=False):
+        e = _find_edge(graph, a, b)
+        if e is not None and edge_is_tunnel(e):
+            return True
+    return False
+
+
+def _path_cost(
+    graph: RouteGraph,
+    path: list[int],
+    edge_mult: Callable[[Edge], float] | None,
+) -> float:
+    total = 0.0
+    for a, b in zip(path, path[1:], strict=False):
+        e = _find_edge(graph, a, b)
+        if e is None:
+            return float("inf")
+        mult = 1.0 if edge_mult is None else max(float(edge_mult(e)), 1e-9)
+        total += float(e.cost) * mult
+    return total
+
+
+def _route_node_sequence(
+    graph: RouteGraph,
+    node_seq: list[int],
+    *,
+    blocked_edges: set[tuple[int, int]] | None,
+    edge_mult: Callable[[Edge], float] | None,
+    tunnel_mandatory: bool,
+) -> list[int]:
+    """
+    Ardışık node hedeflerini bacak bacak en kısa yolla bağlar; `tunnel_mandatory`
+    ise tünel şartını ROTANIN TAMAMINDA bir kez sağlar (her bacakta değil): normal
+    rota tünelden geçmiyorsa tünel, en düşük ek maliyetli bacağa yerleştirilir.
+    Başarısızlıkta boş liste döner.
+    """
+    legs: list[list[int]] = []
+    for a, b in zip(node_seq, node_seq[1:], strict=False):
+        leg = _leg_path(
+            graph,
+            int(a),
+            int(b),
+            blocked_edges=blocked_edges,
+            edge_mult=edge_mult,
+            tunnel_mandatory=False,
+        )
+        if not leg:
+            return []
+        legs.append(leg)
+
+    if (
+        tunnel_mandatory
+        and legs
+        and graph_has_tunnel_edges(graph)
+        and not any(_path_uses_tunnel(graph, leg) for leg in legs)
+    ):
+        best_i = -1
+        best_extra = float("inf")
+        best_leg: list[int] = []
+        for i, leg in enumerate(legs):
+            t_leg = _leg_path(
+                graph,
+                int(leg[0]),
+                int(leg[-1]),
+                blocked_edges=blocked_edges,
+                edge_mult=edge_mult,
+                tunnel_mandatory=True,
+            )
+            if not t_leg:
+                continue
+            extra = _path_cost(graph, t_leg, edge_mult) - _path_cost(graph, leg, edge_mult)
+            if extra < best_extra:
+                best_extra, best_i, best_leg = extra, i, t_leg
+        if best_i < 0:
+            return []
+        legs[best_i] = best_leg
+
+    full_path: list[int] = []
+    for leg in legs:
+        if not full_path:
+            full_path.extend(leg)
+        else:
+            full_path.extend(leg[1:])  # bağlantı node'u iki bacakta da var
+    return full_path
+
+
 def route_mission_plan_via_graph(
     plan: MissionPlan,
     graph: RouteGraph,
@@ -149,8 +244,11 @@ def route_mission_plan_via_graph(
 
     Not: Bu bir "global routing" katmanı; araç kontrolü yine WaypointManager + lokal arbiter ile yapılır.
 
-    tunnel_mandatory: Centerlines graph'ta en az bir `tunnel: true` kenar varsa, her bacık en az bir
-    tünel kenarı içerir (görev GeoJSON'unda alan gerekmez). `False` ise klasik en kısa yol.
+    tunnel_mandatory: Centerlines graph'ta en az bir `tunnel: true` kenar varsa, rota GÖREVİN
+    TAMAMINDA en az bir tünel kenarı içerir: normal en kısa rota tünelden geçmiyorsa, tünel
+    en düşük ek maliyetle eklenebilen TEK bacağa yerleştirilir (her bacağa ayrı ayrı değil —
+    aksi hâlde çok noktalı görevlerde aynı yoldan gidiş-gelişler oluşur). `False` ise klasik
+    en kısa yol.
     """
     if not plan.points or not graph.nodes:
         return plan
@@ -161,26 +259,15 @@ def route_mission_plan_via_graph(
     for p in plan.points:
         snapped_ids.append(int(nearest_node_id(graph, lat=float(p.lat), lon=float(p.lon))))
 
-    full_path: list[int] = []
-    ok = True
-    for a, b in zip(snapped_ids, snapped_ids[1:], strict=False):
-        leg = _leg_path(
-            graph,
-            int(a),
-            int(b),
-            blocked_edges=blocked_edges,
-            edge_mult=edge_mult,
-            tunnel_mandatory=tunnel_mandatory,
-        )
-        if not leg:
-            ok = False
-            break
-        if not full_path:
-            full_path.extend(leg)
-        else:
-            full_path.extend(leg[1:])  # join node duplicated
+    full_path = _route_node_sequence(
+        graph,
+        snapped_ids,
+        blocked_edges=blocked_edges,
+        edge_mult=edge_mult,
+        tunnel_mandatory=tunnel_mandatory,
+    )
 
-    if not ok or not full_path:
+    if not full_path:
         if fallback_to_original_on_failure:
             return plan
         return MissionPlan(points=[], source_file=plan.source_file, raw_crs=plan.raw_crs, meta=dict(plan.meta))
@@ -270,6 +357,9 @@ def route_remaining_mission_via_graph(
     """
     Replanning için: mevcut pozisyondan başlayarak mission hedeflerinin (start_index..end)
     sırasını koruyarak graph üzerinde rota üretir.
+
+    tunnel_mandatory: Kalan rotanın TAMAMINDA bir kez tünel şartı uygular. Araç tünelden
+    zaten geçtiyse çağıran taraf `False` vermelidir (mission_planning bunu takip etmeli).
     """
     if not plan.points or not graph.nodes:
         return plan
@@ -282,28 +372,15 @@ def route_remaining_mission_via_graph(
     start_node = int(nearest_node_id(graph, lat=float(current_lat), lon=float(current_lon)))
     target_nodes = [int(nearest_node_id(graph, lat=float(p.lat), lon=float(p.lon))) for p in targets]
 
-    full_path: list[int] = []
-    ok = True
-    cur = start_node
-    for tn in target_nodes:
-        leg = _leg_path(
-            graph,
-            int(cur),
-            int(tn),
-            blocked_edges=blocked_edges,
-            edge_mult=edge_mult,
-            tunnel_mandatory=tunnel_mandatory,
-        )
-        if not leg:
-            ok = False
-            break
-        if not full_path:
-            full_path.extend(leg)
-        else:
-            full_path.extend(leg[1:])
-        cur = tn
+    full_path = _route_node_sequence(
+        graph,
+        [start_node, *target_nodes],
+        blocked_edges=blocked_edges,
+        edge_mult=edge_mult,
+        tunnel_mandatory=tunnel_mandatory,
+    )
 
-    if not ok or not full_path:
+    if not full_path:
         if fallback_to_original_on_failure:
             return plan
         return MissionPlan(points=[], source_file=plan.source_file, raw_crs=plan.raw_crs, meta=dict(plan.meta))

@@ -305,7 +305,9 @@ def extract_center_points(frame, masks, class_ids, prev_state=None):
             pts.append((int(round(cx)), y))
 
     all_pts = [pts] if len(pts) > 0 else []
-    return all_pts, new_cx
+    # best_m: seçilmiş ego-şerit maskesi (uint8 0/1, tam kare boyutunda) — engel
+    # yol-içi doğrulaması için /perception/lane_mask olarak yayınlanır
+    return all_pts, new_cx, best_m
 
 def draw_results(image, bboxes, scores, masks, class_ids, all_smooth_pts):
     h, w = image.shape[:2]
@@ -380,6 +382,11 @@ class LaneTestNode(Node):
         )
         self.pub_debug_img = self.create_publisher(
             Image, '/perception/debug_image', 10
+        )
+        # Ego-şerit maskesi (mono8, 0/255) — lidar_obstacle_node'un kamera kapısı
+        # bunu kullanır: engelin zemin noktası maskede değilse "şerit dışı" oyu verir
+        self.pub_lane_mask = self.create_publisher(
+            Image, '/perception/lane_mask', 10
         )
 
         self._smooth_state = {}   # {y: cx} kareler arası hat yumuşatma durumu
@@ -472,10 +479,20 @@ class LaneTestNode(Node):
         orig_h, orig_w = frame.shape[:2]
         t1 = time.time()
         bboxes, scores, masks, class_ids = postprocess(ort_outs, orig_w, orig_h)
-        all_smooth_pts, self._smooth_state = extract_center_points(
+        all_smooth_pts, self._smooth_state, lane_mask = extract_center_points(
             frame, masks, class_ids, self._smooth_state
         )
         post_ms = (time.time() - t1) * 1000.0
+
+        # ── Ego-şerit maskesini yayınla (kamera yol-içi kapısı için) ──
+        if lane_mask is not None:
+            try:
+                mask_msg = self.bridge.cv2_to_imgmsg(
+                    (lane_mask * 255).astype(np.uint8), 'mono8')
+                mask_msg.header = msg.header
+                self.pub_lane_mask.publish(mask_msg)
+            except Exception:
+                pass
 
         # ── Noktaları publish et (Otonom sürüş için) ────────────────────
         msg_pts = Float32MultiArray()

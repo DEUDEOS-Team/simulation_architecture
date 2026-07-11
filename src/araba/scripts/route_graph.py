@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import heapq
 import json
 import math
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
 from typing import Any, Iterable, Optional
+
+from deos_algorithms.geo_utils import EARTH_RADIUS_M, haversine_m
 
 
 @dataclass(frozen=True)
@@ -27,18 +30,6 @@ class Edge:
 class RouteGraph:
     nodes: list[Node]
     adj: dict[int, list[Edge]]
-
-
-EARTH_RADIUS_M = 6_371_000.0
-
-
-def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2.0 * EARTH_RADIUS_M * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
 
 
 def _round_key(lat: float, lon: float, *, decimals: int) -> tuple[float, float]:
@@ -157,8 +148,6 @@ def _dijkstra_all(
     edge_cost_multiplier: Optional[Callable[[Edge], float]] = None,
 ) -> tuple[dict[int, float], dict[int, int]]:
     """Kaynak `start` için tüm düğümlerde en kısa mesafe ve önceki düğüm (pozitif ağırlık)."""
-    import heapq
-
     dist: dict[int, float] = {int(start): 0.0}
     prev: dict[int, int] = {}
     pq: list[tuple[float, int]] = [(0.0, int(start))]
@@ -182,6 +171,15 @@ def _dijkstra_all(
                 heapq.heappush(pq, (nd, int(e.v)))
 
     return dist, prev
+
+
+def _reverse_graph(g: RouteGraph) -> RouteGraph:
+    """Yönlü grafın tüm kenarlarını tersine çevirerek yeni bir graf döner."""
+    rev_adj: dict[int, list[Edge]] = {nid: [] for nid in g.adj}
+    for edges in g.adj.values():
+        for e in edges:
+            rev_adj[e.v].append(Edge(u=e.v, v=e.u, cost=e.cost, props=e.props))
+    return RouteGraph(nodes=g.nodes, adj=rev_adj)
 
 
 def dijkstra_mandatory_tunnel(
@@ -214,11 +212,23 @@ def dijkstra_mandatory_tunnel(
         blocked_edges=blocked_edges,
         edge_cost_multiplier=edge_cost_multiplier,
     )
+    # Yönlü grafta v->goal mesafelerini bulmak için ters grafta goal'dan Dijkstra.
+    rev_blocked: Optional[set[tuple[int, int]]] = (
+        {(v, u) for u, v in blocked_edges} if blocked_edges else None
+    )
+    rev_g = _reverse_graph(g)
+    rev_mult: Optional[Callable[[Edge], float]] = None
+    if edge_cost_multiplier is not None:
+        def rev_mult(re: Edge, _ecm=edge_cost_multiplier, _g=g) -> float:
+            for e in _g.adj.get(re.v, []):
+                if e.v == re.u:
+                    return float(_ecm(e))
+            return 1.0
     dist_g, _ = _dijkstra_all(
-        g,
+        rev_g,
         start=int(goal),
-        blocked_edges=blocked_edges,
-        edge_cost_multiplier=edge_cost_multiplier,
+        blocked_edges=rev_blocked,
+        edge_cost_multiplier=rev_mult,
     )
 
     best_cost = float("inf")
@@ -293,8 +303,6 @@ def dijkstra(
     """
     if start == goal:
         return [start]
-
-    import heapq
 
     dist: dict[int, float] = {start: 0.0}
     prev: dict[int, int] = {}

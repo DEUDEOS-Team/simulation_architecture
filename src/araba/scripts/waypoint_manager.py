@@ -10,13 +10,18 @@ import math
 from dataclasses import dataclass
 from typing import Optional
 
-from deos_algorithms.geojson_mission_reader import MissionPlan, MissionPoint
-
-
-EARTH_RADIUS_M = 6_371_000.0
+from deos_algorithms.geo_utils import EARTH_RADIUS_M, haversine_m
+from deos_algorithms.geojson_mission_reader import MissionPlan, MissionPoint, TaskType
 
 BEARING_GAIN = 1.0 / 90.0
 XTE_GAIN = 1.0 / 20.0
+# Pickup/dropoff görevlerinde şartname gereksinimi: doğru kafa açısında varış
+HEADING_TOLERANCE_DEG = 30.0
+# Yandan geçiş (pass-by) ilerletmesi: arrival_radius'a girilmeden waypoint'in
+# yanından geçildiyse de varılmış say — aksi hâlde hedef araç arkasında kalır,
+# steering ±1'e kilitlenir ve rota takibi kopar.
+PASS_BY_RADIUS_FACTOR = 2.0   # arrival_radius'un katı (3 m yarıçap -> 6 m bandı)
+PASS_BY_BEHIND_DEG = 100.0    # waypoint bearing hatası bunu aşarsa "geçildi"
 
 
 @dataclass
@@ -41,6 +46,7 @@ class WaypointState:
 
     wp_index: int = 0
     arrived: bool = False
+    heading_aligned: bool = True
     mission_complete: bool = False
     current_task: str = ""
 
@@ -77,7 +83,23 @@ class WaypointManager:
             xte = cross_track_error_m(prev_wp.lat, prev_wp.lon, wp.lat, wp.lon, pos.lat, pos.lon)
 
         steering = max(-1.0, min(1.0, b_err * BEARING_GAIN - xte * XTE_GAIN))
-        arrived = dist <= wp.arrival_radius_m
+        dist_ok = dist <= wp.arrival_radius_m
+        heading_aligned = True
+        _h_note = ""
+        if wp.heading_deg is not None and wp.task in {TaskType.PICKUP, TaskType.DROPOFF}:
+            _h_err = abs(angle_diff(wp.heading_deg, pos.heading_deg))
+            heading_aligned = _h_err <= HEADING_TOLERANCE_DEG
+            _h_note = f", heading_err={_h_err:.0f}°"
+        # Pass-by: pickup/dropoff/park gerçek varış ister (duraklama/park tetikler),
+        # ara rota noktaları ise yakından geçildiyse ilerletilir.
+        passed_by = (
+            wp.task not in {TaskType.PICKUP, TaskType.DROPOFF, TaskType.PARK, TaskType.PARK_ENTRY}
+            and dist <= wp.arrival_radius_m * PASS_BY_RADIUS_FACTOR
+            and abs(b_err) >= PASS_BY_BEHIND_DEG
+        )
+        if passed_by:
+            _h_note += ", pass_by"
+        arrived = (dist_ok and heading_aligned) or passed_by
 
         state = WaypointState(
             current_wp=wp,
@@ -90,11 +112,12 @@ class WaypointManager:
             speed_limit_ratio=wp.speed_limit_ratio,
             wp_index=self._wp_idx,
             arrived=arrived,
+            heading_aligned=heading_aligned,
             mission_complete=False,
             current_task=wp.task,
             reason=(
                 f"wp[{self._wp_idx}] '{wp.name}': mesafe={dist:.1f}m, bearing={bearing:.0f}°, "
-                f"hata={b_err:+.1f}°, xte={xte:+.1f}m"
+                f"hata={b_err:+.1f}°, xte={xte:+.1f}m{_h_note}"
             ),
         )
 
@@ -121,17 +144,6 @@ class WaypointManager:
     @property
     def is_complete(self) -> bool:
         return self._wp_idx >= len(self._plan.points)
-
-
-def haversine_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = EARTH_RADIUS_M
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlambda = math.radians(lon2 - lon1)
-
-    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
-    return 2.0 * R * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
 
 
 def forward_azimuth_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

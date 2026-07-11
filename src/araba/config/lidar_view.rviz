@@ -7,7 +7,7 @@ Panels:
         - /Global Options1
         - /PointCloud21
       Splitter Ratio: 0.5
-    Tree Height: 617
+    Tree Height: 78
   - Class: rviz_common/Selection
     Name: Selection
   - Class: rviz_common/Tool Properties
@@ -15,10 +15,12 @@ Panels:
       - /2D Goal Pose1
       - /Publish Point1
     Name: Tool Properties
+    Splitter Ratio: 0.5
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
     Name: Views
+    Splitter Ratio: 0.5
 Visualization Manager:
   Class: ""
   Displays:
@@ -40,7 +42,11 @@ Visualization Manager:
       Plane Cell Count: 10
       Reference Frame: <Fixed Frame>
       Value: true
-    - Class: rviz_default_plugins/RobotModel
+    - Alpha: 1
+      Class: rviz_default_plugins/RobotModel
+      Collision Enabled: false
+      Description File: ""
+      Description Source: Topic
       Description Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -48,35 +54,106 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /robot_description
       Enabled: true
+      Links:
+        All Links Enabled: true
+        Expand Joint Details: false
+        Expand Link Details: false
+        Expand Tree: false
+        Link Tree Style: Links in Alphabetic Order
+        arka_sag_ileri_donus_hareket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        arka_sol_ileri_donus_hareket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        base_footprint:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        base_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        cam_sensor_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        gps_sensor_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        imu_sensor_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        lidar_sensor_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        on_sag_ileri_donus_hareket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        on_sag_yatay_direksiyon_hareket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        on_sol_ileri_donus_hareket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+        on_sol_yatay_direksiyon_hareket_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
+      Mass Properties:
+        Inertia: false
+        Mass: false
       Name: RobotModel
+      TF Prefix: ""
+      Update Interval: 0
       Value: true
       Visual Enabled: true
-    - Class: rviz_default_plugins/PointCloud2
-      Alpha: 1
+    - Alpha: 1
       Autocompute Intensity Bounds: true
       Autocompute Value Bounds:
-        Max Value: 10
-        Min Value: -10
+        Max Value: 25.619173049926758
+        Min Value: -0.6867717504501343
         Value: true
       Axis: Z
       Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
       Color: 255; 0; 0
       Color Transformer: AxisColor
       Decay Time: 0
       Enabled: true
       Invert Rainbow: false
       Max Color: 255; 255; 255
+      Max Intensity: 4096
       Min Color: 0; 0; 0
+      Min Intensity: 0
       Name: PointCloud2
       Position Transformer: XYZ
       Selectable: true
       Size (Pixels): 3
-      Size (m): 0.02
+      Size (m): 0.019999999552965164
       Style: Points
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /lidar/scan/points
@@ -93,7 +170,6 @@ Visualization Manager:
       Topic:
         Depth: 5
         Durability Policy: Volatile
-        Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /camera/image
@@ -106,7 +182,7 @@ Visualization Manager:
   Name: root
   Tools:
     - Class: rviz_default_plugins/Interact
-      Hide Inactive: false
+      Hide Inactive Objects: true
     - Class: rviz_default_plugins/MoveCamera
     - Class: rviz_default_plugins/Select
     - Class: rviz_default_plugins/FocusCamera
@@ -159,8 +235,26 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.4
+      Pitch: 0.4000000059604645
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 2.4
+      Yaw: 2.4000000953674316
     Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 720
+  Hide Left Dock: false
+  Hide Right Dock: false
+  Kamera:
+    collapsed: false
+  QMainWindow State: 000000ff00000000fd00000001000000000000019b0000027afc0200000005fb0000000c004b0061006d006500720061010000003b000000180000001600fffffffb000000100044006900730070006c0061007900730100000059000000d7000000c700fffffffb0000001200530065006c0065006300740069006f006e0100000136000000630000005c00fffffffb0000001e0054006f006f006c002000500072006f0070006500720074006900650073010000019f000000630000005c00fffffffb0000000a005600690065007700730100000208000000ad000000a000ffffff0000021d0000027a00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 958
+  X: 764
+  Y: 113

@@ -25,7 +25,7 @@ if _DIR not in sys.path:
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, Imu
-from std_msgs.msg import Float32MultiArray, String
+from std_msgs.msg import Bool, Float32MultiArray, String
 from nav_msgs.msg import Odometry
 from cv_bridge import CvBridge
 import cv2
@@ -36,9 +36,11 @@ from tkinter import ttk, font as tkfont
 from PIL import Image as PILImage, ImageTk
 import numpy as np
 
+import json
+
 # ─── Algoritma modülleri (sadece çağrılır, mantık değiştirilmez) ───
-from perception_fusion import PerceptionFrame, fuse
-from sensors.types import StereoBbox, ImuSample
+from perception_fusion import PerceptionFrame, fuse, parking_detections_from_signs
+from sensors.types import StereoBbox, ImuSample, LidarObstacle
 
 from obstacle_logic import (
     ObstacleLogic, ObstacleState,
@@ -50,12 +52,19 @@ from traffic_light_logic import (
 from traffic_sign_logic import (
     TrafficSignLogic, TrafficSignState,
 )
+from parking_logic import ParkingLogic, ParkState
+from safety_logic import CORRIDOR_HALF_WIDTH_M
+from slalom_logic import SlalomLogic, SlalomState
+from decision_arbiter import Candidate, DecisionArbiter, ReasonCode
 
 # ─── AYARLAR ─────────────────────────────────────────────────
 GUI_REFRESH_MS   = 100     # GUI yenileme periyodu (ms) = 10Hz
 STATE_PUBLISH_HZ = 5.0     # durum topic'lerini yayınlama frekansı
 CAMERA_WIDTH     = 420     # kamera önizleme genişliği
 CAMERA_HEIGHT    = 320     # kamera önizleme yüksekliği
+# Slalom/kaçınma direksiyonu ancak engel bu mesafeye girince devreye girer
+# (daha uzaktaki engel için erken weave başlatma — hız tavanı zaten yavaşlatır)
+SLALOM_ENGAGE_DISTANCE_M = 8.0
 
 # Kamera node'undaki sınıf ID → isim eşlemesi (parse için gerekli)
 CLASS_NAMES = {
@@ -587,14 +596,24 @@ class PerceptionPipelineNode(Node):
         self._traffic_light_logic = TrafficLightLogic()
         self._traffic_sign_logic = TrafficSignLogic()
         self._obstacle_logic = ObstacleLogic()
+        self._parking_logic = ParkingLogic()
+        self._slalom_logic = SlalomLogic()
+        self._decision_arbiter = DecisionArbiter()
 
         # ── Son bilinen durumlar ──
         self._last_light_state: TrafficLightState | None = None
         self._last_sign_state: TrafficSignState | None = None
         self._last_obstacle_state: ObstacleState | None = None
+        self._last_slalom_state: SlalomState | None = None
+        self._last_park_state: ParkState | None = None
+        self._park_mode: bool = False
         self._last_perception_frame: PerceptionFrame | None = None
         self._vehicle_speed_mps: float = 0.0
         self._imu_heading_deg: float | None = None
+        # LiDAR engelleri (lidar_obstacle_node'dan JSON) — mimari kalıbıyla aynı
+        self._lidar: list[LidarObstacle] = []
+        self._lidar_stamp: float = 0.0
+        self.LIDAR_TIMEOUT_S = 1.0   # bu süreden eski lidar verisi kullanılmaz
         self._last_detection_time: float | None = None
         self._detection_count: int = 0
         self._frame_count: int = 0
@@ -614,6 +633,13 @@ class PerceptionPipelineNode(Node):
         self._sub_odom = self.create_subscription(
             Odometry, '/odom', self._odom_callback, 10)
 
+        self._sub_lidar = self.create_subscription(
+            String, '/perception/lidar_obstacles', self._lidar_callback, 10)
+
+        # Planning → Perception: park arama/manevra modu (mimari planning_park_mode)
+        self._sub_park_mode = self.create_subscription(
+            Bool, '/planning/park_mode', self._park_mode_callback, 10)
+
         # ── ROS Yayıncılar ──
         self._pub_light = self.create_publisher(
             String, '/perception/traffic_light_state', 10)
@@ -623,6 +649,15 @@ class PerceptionPipelineNode(Node):
 
         self._pub_obstacle = self.create_publisher(
             String, '/perception/obstacle_state', 10)
+
+        # Mimari arayüzü (mission_planning bunlara abone — launch parametreleriyle eşleşik):
+        # turn_permissions/decision_debug JSON şeması perception_fusion_node ile birebir aynı.
+        self._pub_turn_permissions = self.create_publisher(
+            String, '/perception/turn_permissions', 10)
+        self._pub_decision_debug = self.create_publisher(
+            String, '/perception/decision_debug', 10)
+        self._pub_park_complete = self.create_publisher(
+            Bool, '/perception/park_complete', 10)
 
         # ── State publish timer'ı ──
         state_period = 1.0 / STATE_PUBLISH_HZ
@@ -648,7 +683,11 @@ class PerceptionPipelineNode(Node):
         if self._imu_heading_deg is not None:
             imu_sample = ImuSample(heading_deg=self._imu_heading_deg)
 
-        frame = fuse(stereo=stereo_bboxes, imu=imu_sample)
+        # LiDAR verisi tazeyse füzyona kat (mimari kalıbı: bayat veri kullanılmaz)
+        lidar_fresh = (time.monotonic() - self._lidar_stamp) < self.LIDAR_TIMEOUT_S
+        lidar = self._lidar if lidar_fresh else []
+
+        frame = fuse(stereo=stereo_bboxes, lidar=lidar, imu=imu_sample)
         self._last_perception_frame = frame
 
         self._last_light_state = self._traffic_light_logic.update(
@@ -656,9 +695,63 @@ class PerceptionPipelineNode(Node):
 
         self._last_sign_state = self._traffic_sign_logic.update(frame.sign_dets, now=now)
 
-        self._last_obstacle_state = self._obstacle_logic.update(frame.obstacle_dets)
+        # Kamera + LiDAR engelleri BİRLİKTE (mimari LiDAR-öncelikli çalışır; simde
+        # şerit-sınırı filtresi olmadığından iki kaynak toplanır — çift sayım,
+        # "en yakın engele göre karar" mantığında zararsızdır)
+        self._last_obstacle_state = self._obstacle_logic.update(
+            frame.obstacle_dets + frame.lidar_obstacle_dets)
+
+        # Slalom/statik kaçınma direksiyonu: SADECE lidar engelleri beslenir —
+        # koridor filtreli ve gerçek mesafe/lateral taşırlar. Kamera bbox'ları
+        # mesafesizdir; uzaktaki bir koni sahte slalom başlatabilirdi.
+        # Lateral kapısı SafetyLogic koridoruyla aynı (±1.2 m): lidar node'un
+        # ±3 m koridoru yol KENARINDAKİ levha/durak direklerini de içeriyor —
+        # onlar "cone" sınıflanıp sahte slalom tetikledi (canlı koşu 2026-07-11:
+        # araç durak civarında sebepsiz karşı şeride süzüldü).
+        slalom_dets = [
+            d for d in frame.lidar_obstacle_dets
+            if (d.estimated_distance_m is None
+                or float(d.estimated_distance_m) <= SLALOM_ENGAGE_DISTANCE_M)
+            and (d.estimated_lateral_m is None
+                 or abs(float(d.estimated_lateral_m)) <= CORRIDOR_HALF_WIDTH_M)
+        ]
+        self._last_slalom_state = self._slalom_logic.update(slalom_dets)
+
+        # Park mantığı sadece park modunda ilerletilir (mimariden sapma: fusion node
+        # her tick günceller, ama mission_manager.notify_park_completed yapışkan —
+        # görevden önce gelen yanlış bir complete=True park beklemesini iptal eder).
+        if self._park_mode:
+            park_dets = parking_detections_from_signs(frame.sign_dets)
+            self._last_park_state = self._parking_logic.update(park_dets)
 
         self._log_summary()
+
+    def _park_mode_callback(self, msg: Bool) -> None:
+        new_mode = bool(msg.data)
+        if new_mode and not self._park_mode:
+            # Park moduna giriş: önceki faz kalıntısı taşınmasın (mimari reset kalıbı)
+            self._parking_logic = ParkingLogic()
+            self._last_park_state = None
+        self._park_mode = new_mode
+
+    def _lidar_callback(self, msg: String) -> None:
+        """lidar_obstacle_node'un JSON çıktısını LidarObstacle listesine çevirir
+        (mimari perception_fusion_node._lidar_cb ile birebir aynı)."""
+        try:
+            raw: list[dict] = json.loads(msg.data)
+            self._lidar = [
+                LidarObstacle(
+                    kind=d["kind"],
+                    confidence=float(d["confidence"]),
+                    distance_m=float(d["distance_m"]),
+                    lateral_m=float(d["lateral_m"]),
+                    bbox_px=tuple(d["bbox_px"]) if d.get("bbox_px") else None,
+                )
+                for d in raw
+            ]
+            self._lidar_stamp = time.monotonic()
+        except Exception as e:
+            self.get_logger().error(f"lidar parse: {e}")
 
     def _imu_callback(self, msg: Imu) -> None:
         q = msg.orientation
@@ -754,6 +847,116 @@ class PerceptionPipelineNode(Node):
         else:
             obs_msg.data = "behavior:clear|emergency:False|reason:no_detections"
         self._pub_obstacle.publish(obs_msg)
+
+        self._publish_mission_interface()
+
+    def _publish_mission_interface(self) -> None:
+        """Mimari arayüzü: turn_permissions + decision_debug + park_complete
+        (perception_fusion_node ile aynı JSON şemaları)."""
+        now = time.monotonic()
+        ls = self._last_light_state
+        ss = self._last_sign_state
+        os_ = self._last_obstacle_state
+        ps = self._last_park_state
+
+        # ── turn_permissions ──
+        tp = ss.turn_permissions if ss is not None else None
+        self._pub_turn_permissions.publish(String(data=json.dumps(
+            {
+                "left": bool(tp.left) if tp is not None else True,
+                "straight": bool(tp.straight) if tp is not None else True,
+                "right": bool(tp.right) if tp is not None else True,
+                "forced_direction": tp.forced_direction if tp is not None else None,
+            },
+            ensure_ascii=False,
+        )))
+
+        # ── decision arbiter: adayları topla, tek karar üret ──
+        candidates: list[Candidate] = []
+        if ls is not None:
+            if ls.must_stop:
+                candidates.append(Candidate(name="light", emergency_stop=True, speed_cap=0.0,
+                                            reasons=[ReasonCode.LIGHT_MUST_STOP]))
+            elif float(ls.speed_cap_ratio) < 1.0:
+                lr = (ReasonCode.LIGHT_RED_SLOW if ls.active_color == LightColor.RED
+                      else ReasonCode.LIGHT_YELLOW_SLOW)
+                candidates.append(Candidate(name="light", emergency_stop=False,
+                                            speed_cap=float(ls.speed_cap_ratio), reasons=[lr]))
+        if ss is not None:
+            if ss.must_stop_soon:
+                candidates.append(Candidate(name="sign", emergency_stop=True, speed_cap=0.0,
+                                            reasons=[ReasonCode.SIGN_MUST_STOP]))
+            elif float(ss.speed_cap_ratio) < 1.0:
+                candidates.append(Candidate(name="sign", emergency_stop=False,
+                                            speed_cap=float(ss.speed_cap_ratio),
+                                            reasons=[ReasonCode.SIGN_SPEED_CAP]))
+        sl = self._last_slalom_state
+        slalom_steering = bool(sl is not None and sl.aktif)
+        if os_ is not None:
+            if os_.emergency_stop:
+                candidates.append(Candidate(name="obstacle", emergency_stop=True, speed_cap=0.0,
+                                            reasons=[ReasonCode.OBSTACLE_EMERGENCY_STOP]))
+            # road_blocked (koridorda 2+ bariyer) slalom manevrası SÜRERKEN estop'a
+            # çevrilmez: slalom parkuru tam da böyle görünür; gerçek duvar durumunda
+            # emniyet, yukarıdaki emergency_stop bandından (≤1.5 m) yine gelir.
+            if os_.road_blocked and not slalom_steering:
+                candidates.append(Candidate(name="obstacle", emergency_stop=True, speed_cap=0.0,
+                                            reasons=[ReasonCode.ROAD_BLOCKED]))
+            if float(os_.speed_cap_ratio) < 1.0:
+                reasons = [ReasonCode.STATIC_AVOID] if os_.suggest_lane_change else []
+                candidates.append(Candidate(name="obstacle", emergency_stop=False,
+                                            speed_cap=float(os_.speed_cap_ratio), reasons=reasons))
+        if slalom_steering:
+            # Slalom steer_override'ı: arbiter lane=None'da static/dynamic_avoid'u
+            # iptal eder ama slalom'u etmez — OVERRIDE modu vehicle_controller'da hazır.
+            candidates.append(Candidate(name="slalom", emergency_stop=False,
+                                        speed_cap=float(sl.hiz_katsayisi),
+                                        steer_override=float(sl.steering),
+                                        reasons=[ReasonCode.SLALOM]))
+        if self._park_mode and ps is not None and not ps.complete:
+            reasons = [ReasonCode.PARK_MODE]
+            if bool(ps.no_eligible_spot):
+                reasons.append(ReasonCode.PARK_NO_ELIGIBLE)
+            candidates.append(Candidate(name="park", emergency_stop=False,
+                                        speed_cap=float(ps.speed_ratio),
+                                        steer_override=float(ps.steering), reasons=reasons))
+
+        # Simde lane_walls pointcloud'u yok → lane=None (avoidance steer zaten üretilmiyor)
+        decision = self._decision_arbiter.arbitrate(candidates=candidates, lane=None)
+
+        detections_fresh = (self._last_detection_time is not None
+                            and (time.time() - self._last_detection_time) < 1.0)
+        lidar_fresh = (now - self._lidar_stamp) < self.LIDAR_TIMEOUT_S
+        self._pub_decision_debug.publish(String(data=json.dumps(
+            {
+                "ts_monotonic": now,
+                "fresh": {"stereo": bool(detections_fresh), "lidar": bool(lidar_fresh)},
+                "lane_bounds": None,
+                "entry_blocked": bool(ss.entry_blocked) if ss is not None else False,
+                "candidates": [
+                    {
+                        "name": c.name,
+                        "emergency_stop": c.emergency_stop,
+                        "speed_cap": c.speed_cap,
+                        "steer_override": c.steer_override,
+                        "reasons": [r.value for r in c.reasons],
+                    }
+                    for c in candidates
+                ],
+                "final": {
+                    "emergency_stop": decision.emergency_stop,
+                    "speed_cap": decision.speed_cap,
+                    "has_steer_override": decision.has_steer_override,
+                    "steer_override": decision.steer_override,
+                    "reasons": [r.value for r in decision.reasons],
+                },
+            },
+            ensure_ascii=False,
+        )))
+
+        # ── park_complete: sadece park modunda anlamlı ──
+        self._pub_park_complete.publish(Bool(
+            data=bool(self._park_mode and ps is not None and ps.complete)))
 
     def _log_summary(self) -> None:
         parts = []

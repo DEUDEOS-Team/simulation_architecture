@@ -29,8 +29,8 @@ class SignClass:
     NO_LEFT_TURN = "sola donulmez"
     KEEP_RIGHT = "sağdan gidiniz"
     KEEP_LEFT = "soldan gidin"
-    MUST_RIGHT = "sola mecburi"
-    MUST_LEFT = "saga mecburi"
+    MUST_RIGHT = "saga mecburi"
+    MUST_LEFT = "sola mecburi"
     MUST_STRAIGHT = "ileri mecburi"
     STRAIGHT_OR_RIGHT = "ileri ve saga mecburi yon"
     STRAIGHT_OR_LEFT = "ileri ve sola mecburi yon"
@@ -70,17 +70,16 @@ TURN_RESTRICTION = {
     SignClass.ROUNDABOUT,
     SignClass.LANE_ARRANGEMENT_H,
     SignClass.LANE_ARRANGEMENT_I,
-    SignClass.TWO_WAY,
 }
 
 PARKING_RELATED = {SignClass.PARKING_AREA, SignClass.NO_PARKING}
-INFRASTRUCTURE = {SignClass.TRAFFIC_LIGHT_AHEAD, SignClass.TUNNEL}
+INFRASTRUCTURE = {SignClass.TRAFFIC_LIGHT_AHEAD, SignClass.TUNNEL, SignClass.TWO_WAY}
 
 
-MIN_CONFIDENCE = 0.5
+MIN_CONFIDENCE = 0.7
 CONFIRM_FRAMES = 3
 SIGN_VALIDITY_SECONDS = 5.0
-STOP_TRIGGER_DISTANCE_M = 10.0
+STOP_TRIGGER_DISTANCE_M = 5.0
 STOP_HOLD_SECONDS = 5.0
 STOP_REARM_SECONDS = SIGN_VALIDITY_SECONDS
 CROSSWALK_SPEED_RATIO = 0.5
@@ -132,6 +131,10 @@ class TurnPermissions:
             self.forced_direction = "pass_right"
         elif sign_class == SignClass.ROUNDABOUT:
             self.forced_direction = "roundabout"
+        elif sign_class == SignClass.LANE_ARRANGEMENT_H:
+            self.forced_direction = "pass_right"
+        elif sign_class == SignClass.LANE_ARRANGEMENT_I:
+            self.forced_direction = "pass_left"
 
 
 @dataclass
@@ -143,6 +146,10 @@ class TrafficSignState:
     approaching_tunnel: bool = False
     current_area_is_parking: bool = False
     current_area_no_parking: bool = False
+    # İki yönlü yol: karşıdan gelen trafik olabilir
+    two_way_road: bool = False
+    # Girilmez: bu yola girilmemeli → planlayıcıya alternatif rota sinyali
+    entry_blocked: bool = False
     active_signs: list[str] = field(default_factory=list)
     reasons: list[str] = field(default_factory=list)
 
@@ -173,7 +180,7 @@ class TrafficSignLogic:
 
     def update(self, detections: list[SignDetection], now: Optional[float] = None) -> TrafficSignState:
         if now is None:
-            now = time.time()
+            now = time.monotonic()
 
         detections = [d for d in detections if d.confidence >= MIN_CONFIDENCE]
         self._update_memory(detections, now)
@@ -189,7 +196,7 @@ class TrafficSignLogic:
 
     def notify_stop_completed(self, now: Optional[float] = None) -> None:
         if now is None:
-            now = time.time()
+            now = time.monotonic()
         self._pending_stop = False
         self._stop_started_at = None
         self._stop_cooldown_until = now + STOP_REARM_SECONDS
@@ -226,7 +233,8 @@ class TrafficSignLogic:
 
     def _build_state(self, active_memories: list[_SignMemory], now: float) -> TrafficSignState:
         state = TrafficSignState()
-        state.turn_permissions = self._pending_turn_restrictions
+        # turn_permissions fonksiyon sonunda _pending_turn_restrictions'ın kopyasıyla doldurulur.
+        # Döngü içinde apply_restriction() doğrudan _pending_turn_restrictions'ı mutate eder.
 
         for mem in active_memories:
             cls = mem.class_name
@@ -258,14 +266,16 @@ class TrafficSignLogic:
 
             elif cls == SignClass.NO_ENTRY:
                 state.must_stop_soon = True
-                state.reasons.append("NO_ENTRY ahead")
+                state.entry_blocked = True
+                state.reasons.append("NO_ENTRY: route replanning needed")
 
             elif cls == SignClass.PEDESTRIAN_CROSSING:
                 state.speed_cap_ratio = min(state.speed_cap_ratio, CROSSWALK_SPEED_RATIO)
                 state.reasons.append("pedestrian crossing ahead")
 
             elif cls == SignClass.BUS_STOP:
-                pass
+                state.speed_cap_ratio = min(state.speed_cap_ratio, 0.4)
+                state.reasons.append("bus stop: slow down")
 
             elif cls in TURN_RESTRICTION:
                 self._pending_turn_restrictions.apply_restriction(cls)
@@ -284,6 +294,11 @@ class TrafficSignLogic:
                 state.approaching_tunnel = True
                 state.speed_cap_ratio = min(state.speed_cap_ratio, TUNNEL_SPEED_RATIO)
                 state.reasons.append("tunnel ahead, perception may degrade")
+
+            elif cls == SignClass.TWO_WAY:
+                state.two_way_road = True
+                state.speed_cap_ratio = min(state.speed_cap_ratio, 0.6)
+                state.reasons.append("two-way road: oncoming traffic possible")
 
         state.turn_permissions = TurnPermissions(
             left=self._pending_turn_restrictions.left,

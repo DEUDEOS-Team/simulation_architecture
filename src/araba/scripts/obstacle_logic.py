@@ -4,6 +4,7 @@ obstacle_logic.py
 Yaya / koni / bariyer tespitlerini davranisa ceviren ust katman.
 """
 
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -48,6 +49,10 @@ STATIC_EMERGENCY_DISTANCE_M = 1.5
 STATIC_AVOID_COMMIT_FRAMES = 6  # yön kararı en az bu kadar frame korunur
 STATIC_AVOID_CLEAR_DISTANCE_M = 4.5  # en yakın statik engel bu mesafeden uzaksa commit bırak
 STATIC_AVOID_SWITCH_MARGIN_M = 0.6  # zıt tarafa geçmek için "daha belirgin" yakınlık farkı
+
+# Dinamik engelde dur-bekle sonrası kaçınma geçişi için minimum bekleme süresi.
+# Tick sayısına değil time.monotonic()'e dayandığı için ROS node Hz'inden bağımsız.
+DYNAMIC_AVOID_HOLD_S = 0.4
 
 
 def classify_obstacle(class_name: str) -> Optional[str]:
@@ -114,11 +119,15 @@ class ObstacleLogic:
         self._dynamic_clear_frames = 0
         self._static_commit_dir: Optional[str] = None
         self._static_commit_frames_left: int = 0
-        self._dynamic_stop_started_at: Optional[float] = None
-        self._tick_i: int = 0
+        self._dynamic_stop_started_at: Optional[float] = None  # time.monotonic() zamanı
 
-    def update(self, detections: list[ObstacleDetection]) -> ObstacleState:
-        self._tick_i += 1
+    def update(
+        self,
+        detections: list[ObstacleDetection],
+        now: Optional[float] = None,
+    ) -> ObstacleState:
+        if now is None:
+            now = time.monotonic()
         safety_dets = [
             SafetyDetection(
                 x1=d.bbox_px[0],
@@ -153,7 +162,7 @@ class ObstacleLogic:
         dynamic_threats = [th for th in corridor_threats if is_dynamic_kind(th.detection.class_name)]
         static_threats = [th for th in corridor_threats if is_static_kind(th.detection.class_name)]
 
-        self._apply_dynamic_wait(state, dynamic_threats)
+        self._apply_dynamic_wait(state, dynamic_threats, now)
         if not state.waiting_for_dynamic_obstacle:
             self._apply_static_avoidance(state, static_threats)
 
@@ -161,7 +170,7 @@ class ObstacleLogic:
             state.behavior_mode = ObstacleBehavior.EMERGENCY_STOP
         return state
 
-    def _apply_dynamic_wait(self, state: ObstacleState, dynamic_threats: list[ThreatObservation]) -> None:
+    def _apply_dynamic_wait(self, state: ObstacleState, dynamic_threats: list[ThreatObservation], now: float) -> None:
         nearest = self._nearest(dynamic_threats)
         should_wait = nearest is not None and nearest.distance_m <= DYNAMIC_STOP_DISTANCE_M
 
@@ -204,12 +213,11 @@ class ObstacleLogic:
             return
 
         if self._dynamic_stop_started_at is None:
-            self._dynamic_stop_started_at = float(self._tick_i)
+            self._dynamic_stop_started_at = now
 
-        hold_ticks = 8  # ~8 frames in this pure-python loop; ROS node runs 20Hz => ~0.4s
-        ticks_waiting = float(self._tick_i) - float(self._dynamic_stop_started_at)
+        elapsed_s = now - self._dynamic_stop_started_at
         lat = float(nearest.lateral_m)
-        if ticks_waiting >= hold_ticks and abs(lat) >= 0.35:
+        if elapsed_s >= DYNAMIC_AVOID_HOLD_S and abs(lat) >= 0.35:
             state.dynamic_avoid_active = True
             # Opposite side of obstacle lateral: obstacle on left => pass right, etc.
             state.dynamic_avoidance_direction = "right" if lat > 0 else "left"

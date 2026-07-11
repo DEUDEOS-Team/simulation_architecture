@@ -21,9 +21,10 @@ from typing import Optional
 
 
 CAMERA_HEIGHT_M = 1.2
-CAMERA_FOCAL_PX = 700.0
-PRINCIPAL_POINT_Y_PX = 360.0
-IMAGE_WIDTH_PX = 1280
+# stereo_detector_node varsayılanlarıyla eşleştirildi: image_width=640, image_height=480, focal_length_px=320
+CAMERA_FOCAL_PX = 320.0
+PRINCIPAL_POINT_Y_PX = 240.0   # 480 / 2
+IMAGE_WIDTH_PX = 640
 
 MIN_CONFIDENCE = 0.40
 APPROACH_TRIGGER_M = 8.0

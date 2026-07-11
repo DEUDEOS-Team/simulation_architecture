@@ -7,6 +7,7 @@ install(DIRECTORY
   config
   launch
   meshes
+  missions
   urdf
   worlds
   DESTINATION share/${PROJECT_NAME}/
@@ -66,11 +67,17 @@ install(PROGRAMS
   scripts/lane_test_node.py
   scripts/lane_yolo_node.py
   scripts/autonomous_control_node.py
+  scripts/lidar_obstacle_node.py
+  scripts/final_odom_node.py
+  scripts/mission_planning_node.py
+  scripts/vehicle_controller_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 # ── Algoritma modülleri (pure Python, import edilebilir) ──
 install(PROGRAMS
+  scripts/geo_utils.py
+  scripts/ros_topic_layout.py
   scripts/safety_logic.py
   scripts/obstacle_logic.py
   scripts/traffic_light_logic.py

@@ -1,0 +1,54 @@
+ekf_filter_node:
+  ros__parameters:
+    use_sim_time: true # Simülasyon için true, arabada false
+    frequency: 30.0  
+    sensor_timeout: 0.1
+    two_d_mode: true 
+    
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_link
+    world_frame: odom  
+
+    # odom -> base_link dönüşümünü EKF düğümü yayınlar
+    publish_tf: false
+
+    # 1. KAYNAK: GPS'ten Çevrilmiş Odometri
+    odom0: /odometry/gps
+    odom0_config: [true,  true,  false,  
+                   false, false, false,  
+                   false, false, false,
+                   false, false, false,
+                   false, false, false]
+    odom0_differential: false
+
+    odom1: /kiss/odometry
+    odom1_config: [false, false, false,
+                   false, false, false,
+                   true,  true,  false,  # Sadece X ve Y hızlarına güveniyoruz
+                   false, false, true,   # Sadece Z eksenindeki dönüş hızına (Yaw) güveniyoruz
+                   false, false, false]
+    odom1_differential: false
+
+    # 2. KAYNAK: STM32'den Gelen IMU
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, true,    
+                  false, false, false,
+                  false, false, true,    
+                  false, false, false] # Testlerde optimize edilecek
+    imu0_differential: false
+    imu0_relative: true
+    
+navsat_transform:
+  ros__parameters:
+    use_sim_time: true # Simülasyon için true, arabada false
+    frequency: 30.0
+    delay: 3.0
+    magnetic_declination_radians: 0.096 
+    yaw_offset: 1.58
+    zero_altitude: true
+    broadcast_cartesian_transform: true
+    publish_filtered_gps: true
+    wait_for_datum: true
+    datum: [40.7899, 29.5089, 0.0]

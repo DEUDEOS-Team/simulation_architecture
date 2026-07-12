@@ -35,3 +35,9 @@ __pycache__/
 # scripts/ içinde yanlışlıkla çalıştırılan colcon artıkları (derlemeyle yeniden oluşur)
 /src/araba/scripts/install/
 /src/araba/scripts/log/
+
+echo "results/" >> .gitignore
+echo "rosbag2_*/" >> .gitignore
+*.mcap
+*.npy
+rosbag2_*/

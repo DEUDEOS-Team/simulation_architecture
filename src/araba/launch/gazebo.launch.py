@@ -44,6 +44,7 @@ def generate_launch_description():
     world_path = PathJoinSubstitution([FindPackageShare('araba'), 'worlds',
                                        LaunchConfiguration('world')])
     urdf_path = PathJoinSubstitution([FindPackageShare('araba'), 'urdf', 'araba.urdf'])
+    ekf_config_path = os.path.join(pkg_share, 'config', 'ekf.yaml')
     rviz_config = os.path.join(pkg_share, 'config', 'lidar_view.rviz')
     detection_model_path = os.path.join(pkg_share, 'models', 'onnx', 'detection.onnx')
     # 2026-07-11: yeni gazeboset yolov8s-seg modeli (model.onnx); eski model lane_seg.onnx'te yedek
@@ -118,6 +119,12 @@ def generate_launch_description():
             }.items(),
         ),
 
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(get_package_share_directory('araba'), 'launch', 'lidarfilters.launch.py')
+            )
+        ),
+
         Node(package='robot_state_publisher', executable='robot_state_publisher', output='screen',
              parameters=[{'robot_description': robot_description, 'use_sim_time': True}]),
 
@@ -173,14 +180,38 @@ def generate_launch_description():
         # Dünya çerçeveli nihai odometri — GPS(pozisyon) + IMU(yön) + odom(hız) füzyonu
         # → /localization/odom/final
         # (mimarideki sensor_fusion/final_odom_node'un sim uyarlaması; mission_planning'in girdisi)
+        # GPS verisini EKF'nin anlayacağı metrik odometriye çeviren düğüm
         TimerAction(period=6.9, actions=[
-            Node(package='araba', executable='final_odom_node.py', name='final_odom_node',
-                 output='screen', parameters=[{'use_sim_time': True,
-                                               'spawn_x': ParameterValue(spawn_x, value_type=float),
-                                               'spawn_y': ParameterValue(spawn_y, value_type=float),
-                                               'spawn_z': ParameterValue(spawn_z, value_type=float),
-                                               'spawn_yaw': ParameterValue(spawn_yaw, value_type=float),
-                                               'datum_lat': DATUM_LAT, 'datum_lon': DATUM_LON}]),
+            Node(
+                package='robot_localization',
+                executable='navsat_transform_node',
+                name='navsat_transform',
+                output='screen',
+                parameters=[ekf_config_path],
+                remappings=[
+                    ('gps/fix', '/gps/fix'),
+                    ('imu', '/imu/data'),
+                    # EKF'nin ürettiği güncel konumu dinleyip datum'u düzeltir
+                    ('odometry/filtered', '/localization/odom/final'), 
+                    # EKF'ye odom0 olarak gidecek metrik GPS çıktısı
+                    ('odometry/gps', '/odometry/gps') 
+                ]
+            ),
+        ]),
+
+        # Gerçek EKF (Genişletilmiş Kalman Filtresi) Düğümü
+        TimerAction(period=7.0, actions=[
+            Node(
+                package='robot_localization',
+                executable='ekf_node',
+                name='ekf_filter_node',
+                output='screen',
+                parameters=[ekf_config_path],
+                remappings=[
+                    # EKF'nin çıktısını, mission_planning_node'un beklediği topice yönlendiriyoruz
+                    ('odometry/filtered', '/localization/odom/final')
+                ]
+            ),
         ]),
 
         TimerAction(period=7.0, actions=[
@@ -229,7 +260,7 @@ def generate_launch_description():
                  parameters=[{'use_sim_time': True,
                               'cam_width': 1280.0,
                               # throttle 0.5 -> 2.5 m/s (9 km/h seyir), 0.35 -> 1.75 (6.3 km/h viraj)
-                              'speed_scale': 5.0}]),
+                              'speed_scale': 10.0}]),
         ]),
 
         # Araç kontrol arbiter'ı (mimari vehicle_controller'ın sim uyarlaması, 5. adım):

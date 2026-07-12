@@ -174,14 +174,19 @@ class DecisionArbiter:
         # Lane constraint: sadece avoidance türü override'larda clamp et (park/slalom farklı bağlam)
         if has_steer and lane is not None and lane.is_valid and steer_src is not None:
             if steer_src.name in {"static_avoid", "dynamic_avoid"}:
-                # Basit model: steer sign -> hedef lateral y (±0.6m)
-                target_y = 0.6 if steer > 0 else (-0.6 if steer < 0 else 0.0)
+                # Steer sign convention: pozitif = sağ dönüş = negatif y (ROS base_link: y sol pozitif)
+                # target_y ±2.0m: komşu şerit merkezine ulaşmak için yeterli hedef mesafe.
+                # lane clamp bu değeri mevcut yol sınırlarına göre kırpar.
+                target_y = -2.0 if steer > 0 else (2.0 if steer < 0 else 0.0)
                 clamped_y = lane.clamp_lateral_target(target_y)
                 if clamped_y != target_y:
-                    # Clamp sonrası steer'i küçült
-                    steer = _clamp11(steer * (abs(clamped_y) / max(0.1, abs(target_y))))
                     if ReasonCode.LANE_CLAMP_AVOIDANCE not in seen:
                         reasons.append(ReasonCode.LANE_CLAMP_AVOIDANCE)
+                    # Clamp zıt tarafa işaret ediyorsa (şerit sınırı kaçınma yönünde değil) → steer iptal
+                    if target_y == 0.0 or clamped_y * target_y < 0:
+                        steer = 0.0
+                    else:
+                        steer = _clamp11(steer * (abs(clamped_y) / max(0.1, abs(target_y))))
 
         # Lane yoksa avoidance override'ını tamamen iptal etme seçeneği.
         # Not: Dinamik engelde (yaya) temel davranış (dur/bekle) lane'e bağlı değildir; bu kural sadece

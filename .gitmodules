@@ -1,6 +1,6 @@
 [submodule "pcl_localization_ros2"]
-	path = pcl_localization_ros2
+	path = src/pcl_localization_ros2
 	url = https://github.com/adawarp/pcl_localization_ros2.git
 [submodule "kiss-icp"]
-	path = kiss-icp
+	path = src/kiss-icp
 	url = https://github.com/PRBonn/kiss-icp.git

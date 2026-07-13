@@ -36,8 +36,7 @@ __pycache__/
 /src/araba/scripts/install/
 /src/araba/scripts/log/
 
-echo "results/" >> .gitignore
-echo "rosbag2_*/" >> .gitignore
+# ── Rosbag/değerlendirme çıktıları (büyük; results/ altındaki mevcut örnekler hariç) ──
 *.mcap
 *.npy
 rosbag2_*/

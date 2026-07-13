@@ -55,6 +55,11 @@ def generate_launch_description():
     headless = LaunchConfiguration('headless')
     manuel = LaunchConfiguration('manuel')
     show_window = LaunchConfiguration('show_window')
+    localization = LaunchConfiguration('localization')
+    # ekf: robot_localization (navsat+EKF) + KISS-ICP zinciri (arda'nın hattı)
+    # final_odom: bizim GPS+IMU+odom füzyon node'umuz (7 turda kanıtlanmış yedek)
+    use_ekf = IfCondition(PythonExpression(["'", localization, "' == 'ekf'"]))
+    use_final_odom = IfCondition(PythonExpression(["'", localization, "' != 'ekf'"]))
     mission_file = LaunchConfiguration('mission_file')
     centerlines_file = LaunchConfiguration('centerlines_file')
     spawn_x = LaunchConfiguration('spawn_x')
@@ -96,6 +101,9 @@ def generate_launch_description():
                               description='mission_planning yol ağı GeoJSON yolu'),
         DeclareLaunchArgument('world', default_value='benim_dunyam.sdf',
                               description='worlds/ altındaki dünya dosyası (ör. saha_dunyasi.sdf)'),
+        DeclareLaunchArgument('localization', default_value='ekf',
+                              description="ekf: robot_localization+KISS-ICP | "
+                                          "final_odom: eski GPS+IMU füzyon node'u (yedek)"),
         # Spawn pozu; saha dünyası için start noktası: -38.53 -0.91 yaw=-0.85
         DeclareLaunchArgument('spawn_x', default_value=str(SPAWN_X)),
         DeclareLaunchArgument('spawn_y', default_value=str(SPAWN_Y)),
@@ -119,10 +127,12 @@ def generate_launch_description():
             }.items(),
         ),
 
+        # LiDAR ön-işleme + KISS-ICP odometrisi (/kiss/odometry) — sadece EKF hattında gerekli
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
                 os.path.join(get_package_share_directory('araba'), 'launch', 'lidarfilters.launch.py')
-            )
+            ),
+            condition=use_ekf,
         ),
 
         Node(package='robot_state_publisher', executable='robot_state_publisher', output='screen',
@@ -177,41 +187,59 @@ def generate_launch_description():
                                                'centerlines_file': centerlines_file}]),
         ]),
 
-        # Dünya çerçeveli nihai odometri — GPS(pozisyon) + IMU(yön) + odom(hız) füzyonu
-        # → /localization/odom/final
-        # (mimarideki sensor_fusion/final_odom_node'un sim uyarlaması; mission_planning'in girdisi)
-        # GPS verisini EKF'nin anlayacağı metrik odometriye çeviren düğüm
+        # ============ LOKALİZASYON (localization:=ekf | final_odom) ============
+        # Her iki hat da /localization/odom/final üretir (mission_planning'in girdisi).
+
+        # [ekf] GPS verisini EKF'nin anlayacağı metrik odometriye çeviren düğüm.
+        # yaw_offset launch'taki spawn_yaw'dan gelir: Gazebo IMU'su spawn yönünü 0 kabul
+        # eder; ENU yaw = IMU yaw + spawn_yaw (ekf.yaml'daki sabit değeri ezer, böylece
+        # rotanın ortasından spawn'lı testlerde de pusula doğru başlar).
         TimerAction(period=6.9, actions=[
             Node(
                 package='robot_localization',
                 executable='navsat_transform_node',
                 name='navsat_transform',
                 output='screen',
-                parameters=[ekf_config_path],
+                condition=use_ekf,
+                parameters=[ekf_config_path,
+                            {'yaw_offset': ParameterValue(spawn_yaw, value_type=float)}],
                 remappings=[
                     ('gps/fix', '/gps/fix'),
                     ('imu', '/imu/data'),
                     # EKF'nin ürettiği güncel konumu dinleyip datum'u düzeltir
-                    ('odometry/filtered', '/localization/odom/final'), 
+                    ('odometry/filtered', '/localization/odom/final'),
                     # EKF'ye odom0 olarak gidecek metrik GPS çıktısı
-                    ('odometry/gps', '/odometry/gps') 
+                    ('odometry/gps', '/odometry/gps')
                 ]
             ),
         ]),
 
-        # Gerçek EKF (Genişletilmiş Kalman Filtresi) Düğümü
+        # [ekf] Genişletilmiş Kalman Filtresi (GPS pozisyon + KISS-ICP hız + IMU yaw)
         TimerAction(period=7.0, actions=[
             Node(
                 package='robot_localization',
                 executable='ekf_node',
                 name='ekf_filter_node',
                 output='screen',
+                condition=use_ekf,
                 parameters=[ekf_config_path],
                 remappings=[
                     # EKF'nin çıktısını, mission_planning_node'un beklediği topice yönlendiriyoruz
                     ('odometry/filtered', '/localization/odom/final')
                 ]
             ),
+        ]),
+
+        # [final_odom] Eski GPS(pozisyon)+IMU(yön)+odom(hız) füzyon node'umuz — yedek
+        TimerAction(period=6.9, actions=[
+            Node(package='araba', executable='final_odom_node.py', name='final_odom_node',
+                 output='screen', condition=use_final_odom,
+                 parameters=[{'use_sim_time': True,
+                              'spawn_x': ParameterValue(spawn_x, value_type=float),
+                              'spawn_y': ParameterValue(spawn_y, value_type=float),
+                              'spawn_z': ParameterValue(spawn_z, value_type=float),
+                              'spawn_yaw': ParameterValue(spawn_yaw, value_type=float),
+                              'datum_lat': DATUM_LAT, 'datum_lon': DATUM_LON}]),
         ]),
 
         TimerAction(period=7.0, actions=[
@@ -260,7 +288,8 @@ def generate_launch_description():
                  parameters=[{'use_sim_time': True,
                               'cam_width': 1280.0,
                               # throttle 0.5 -> 2.5 m/s (9 km/h seyir), 0.35 -> 1.75 (6.3 km/h viraj)
-                              'speed_scale': 10.0}]),
+                              # (arda 10.0 denedi; dönüş/durma ayarlarımız 5.0'a göre kanıtlı)
+                              'speed_scale': 5.0}]),
         ]),
 
         # Araç kontrol arbiter'ı (mimari vehicle_controller'ın sim uyarlaması, 5. adım):

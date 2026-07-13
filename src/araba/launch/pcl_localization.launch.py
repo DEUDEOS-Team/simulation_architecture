@@ -1,14 +1,20 @@
 import os
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
 
 def generate_launch_description():
     # Kendi araba paketimizin içindeki maps klasörünün yolunu dinamik olarak buluyoruz
     pkg_share = get_package_share_directory('araba')
-    map_file_path = os.path.join(pkg_share, 'maps', 'saha_haritasi.pcd')
+    # Varsayılan: sim parkurunun ground-truth PCD'si (scripts/tools/build_pcd_map.py üretir).
+    # Gerçek saha için: map_file:=<...>/maps/saha_haritasi.pcd
+    default_map = os.path.join(pkg_share, 'maps', 'benim_dunyam.pcd')
 
     return LaunchDescription([
+        DeclareLaunchArgument('map_file', default_value=default_map,
+                              description='NDT eşleştirme için PCD harita yolu'),
         Node(
             package='pcl_localization_ros2',
             executable='pcl_localization_node',
@@ -16,7 +22,7 @@ def generate_launch_description():
             output='screen',
             parameters=[{
                 'use_sim_time': True,                  # Simülasyon saati kullanımı ZORUNLU
-                'map_file': map_file_path,             # Dinamik olarak bulduğumuz pcd harita yolu
+                'map_file': LaunchConfiguration('map_file'),  # PCD harita (argümanla değiştirilebilir)
                 'map_frame_id': 'map',                 # Global harita ekseni
                 'odom_frame_id': 'odom',               # EKF'nin başlangıç ekseni
                 'base_frame_id': 'base_link',          # Aracın şasi ekseni

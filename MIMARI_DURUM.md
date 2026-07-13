@@ -42,6 +42,7 @@ ros2 launch araba gazebo.launch.py headless:=true show_window:=false
 | `centerlines_file` | `missions/teknofest_centerlines.geojson` | Yol ağı / centerline'lar |
 | `world` | `benim_dunyam.sdf` | `worlds/` altındaki dünya dosyası |
 | `spawn_x/y/z/yaw` | `45.31 / 16.0 / 0.51 / 1.58` | Araç başlangıç pozu (dünya/ENU) |
+| `localization` | `ekf` | `ekf`: robot_localization+KISS-ICP | `final_odom`: eski füzyon node'u (yedek) |
 
 **Rotanın ortasından test koşusu** (ör. kavşak+park bölümü):
 
@@ -52,8 +53,40 @@ ros2 launch araba gazebo.launch.py \
 ```
 
 > Kısa görev dosyasının **ilk hedefi spawn noktasına yakın olmalı** — ilk rota,
-> görev dosyasındaki 0. hedeften planlanır. `spawn_*` değerleri `final_odom_node`'a
-> da parametre gider; ikisi launch içinde otomatik senkron kalır.
+> görev dosyasındaki 0. hedeften planlanır. `spawn_*` değerleri lokalizasyona da
+> parametre gider (final_odom'un spawn dönüşümü / navsat'ın `yaw_offset`'i);
+> hepsi launch içinde otomatik senkron kalır.
+
+### Lokalizasyon (`localization:=ekf | final_odom`)
+
+İki hat da `/localization/odom/final` üretir (mission_planning'in girdisi):
+
+- **`ekf` (varsayılan, arda'nın hattı):** `lidarfilters.launch.py` LiDAR'ı voxel
+  filtreden geçirip **KISS-ICP** ile LiDAR odometrisi üretir (`/kiss/odometry`);
+  `robot_localization/navsat_transform` GPS'i metrik odometriye çevirir; **EKF**
+  GPS pozisyonu + KISS-ICP hızı + IMU yaw'ı kaynaştırır (`config/ekf.yaml`).
+  Gazebo IMU'su spawn yönünü 0 kabul ettiği için navsat'ın `yaw_offset`'i launch'ta
+  `spawn_yaw`'dan otomatik verilir.
+- **`final_odom` (yedek):** Eski GPS(poz)+IMU(yön)+odom(hız) füzyon node'umuz —
+  7 canlı turda kanıtlanmış; EKF hattında sorun görülürse
+  `localization:=final_odom` ile anında geri dönülür.
+
+Ayrıca **PCD harita lokalizasyonu** (opsiyonel, ayrı launch): `maps/benim_dunyam.pcd`
+(parkurun ground-truth nokta haritası; `scripts/tools/build_pcd_map.py` ile yeniden
+üretilebilir) üzerinde NDT eşleştirme:
+
+```bash
+ros2 launch araba pcl_localization.launch.py            # varsayılan: benim_dunyam.pcd
+ros2 launch araba pcl_localization.launch.py map_file:=.../maps/saha_haritasi.pcd
+```
+
+**EKF hattının bağımlılıkları** (bir defalık kurulum):
+
+```bash
+sudo apt install ros-jazzy-robot-localization ros-jazzy-pcl-ros ros-jazzy-pcl-conversions libpcl-dev
+git submodule update --init          # src/kiss-icp + src/pcl_localization_ros2
+colcon build --symlink-install       # kiss_icp ve pcl_localization_ros2 derlenir
+```
 
 ### GPS Datumu
 
@@ -74,8 +107,10 @@ Gazebo sensörleri (ros_gz_bridge, 10 topic)
  │                     └─► /perception/center_pts
  ├─ /lidar/scan/points ─► lidar_obstacle_node (kümeleme + yol maskesi)
  │                     └─► /perception/lidar_obstacles
- ├─ /gps/fix + /imu/data + /odom ─► final_odom_node
- │                     └─► /localization/odom/final  (dünya/ENU poz + yön)
+ ├─ LOKALİZASYON (bkz. §1) ─► /localization/odom/final (dünya/ENU poz + yön)
+ │    ekf: /lidar/scan/points ─► voxel ─► KISS-ICP ─► /kiss/odometry ─┐
+ │         /gps/fix ─► navsat_transform ─► /odometry/gps ─► EKF ◄─────┘◄─ /imu/data
+ │    final_odom: /gps/fix + /imu/data + /odom ─► final_odom_node (yedek)
  │
  ├─ detections + lidar ─► perception_pipeline_node (füzyon + dashboard)
  │       ├─► /perception/traffic_light_state / traffic_sign_state / obstacle_state
@@ -106,7 +141,8 @@ KONTROL ZİNCİRİ:
 | 6.0s | `camera_perception_node` | Nesne tespiti (`detection.onnx`) |
 | 6.5s | `lane_test_node` | Şerit segmentasyonu (`model.onnx`) |
 | 6.8s | `lidar_obstacle_node` | LiDAR engel kümeleme (yol maskeli) |
-| 6.9s | `final_odom_node` | GPS+IMU+odom füzyonu → dünya çerçevesi |
+| 0s (ekf) | `lidarfilters` (voxel + KISS-ICP) | LiDAR odometrisi `/kiss/odometry` |
+| 6.9-7.0s | lokalizasyon: `navsat`+`ekf_node` **veya** `final_odom_node` | `/localization/odom/final` |
 | 7.0s | `perception_pipeline_node` | Algı füzyonu + tkinter dashboard |
 | 7.2s | `mission_planning_node` | Görev/rota planlama + kavşak dönüşü |
 | 7.5s | `autonomous_control_node` | Şerit takibi P-kontrolcü (manuel'de kapalı) |
@@ -178,7 +214,32 @@ KONTROL ZİNCİRİ:
 
 ---
 
-## 7. Son Değişiklikler (11–12 Temmuz — 7. tur sonrası paket)
+## 7a. Son Değişiklikler (13 Temmuz — arda lokalizasyon entegrasyonu)
+
+`arda` branch'i merge edildi ve şu şekilde entegre edildi:
+
+- **EKF lokalizasyon hattı varsayılan oldu** (`localization:=ekf`, bkz. §1):
+  navsat_transform + EKF + KISS-ICP LiDAR odometrisi. Eski `final_odom_node`
+  **yedek olarak duruyor** (`localization:=final_odom`); iki hat da aynı topic'i
+  üretir, gerisi hiçbir node değişmez. `ekf.yaml`'daki sabit `yaw_offset` launch'ta
+  `spawn_yaw`'a bağlandı (rotanın ortasından spawn'lı testler bozulmasın).
+- **Engel tarafı bilinçli olarak alınmadı:** arda'nın commit'i `obstacle_logic`'teki
+  road_blocked yakınlık+boşluk kuralımızı `barrier_count > 1`'e geri döndürüyordu
+  (tünel REPLAN fırtınası geri gelirdi) ve `decision_arbiter` kaçınma davranışını
+  değiştiriyordu — ikisi de bizim sürümde bırakıldı. (Not: arda'nın decision_arbiter
+  işaret-yönü düzeltmesi mimari repoda değerlendirilmeye değer.)
+- `speed_scale` 10.0 → **5.0'a geri** (dönüş/durma ayarlarımız 5.0'la kanıtlı);
+  dünya SDF'indeki `/home/arda/...` yolları bizim workspace'e geri çevrildi.
+- **PCD haritası üretildi:** `maps/benim_dunyam.pcd` (116k nokta, ground-truth
+  teleport-tarama yöntemi, üretici: `scripts/tools/build_pcd_map.py`);
+  `pcl_localization.launch.py` varsayılanı buna çevrildi (`map_file` argümanlı).
+- Submodule'lar eklendi: `src/kiss-icp`, `src/pcl_localization_ros2`
+  (`.gitmodules` path'leri düzeltildi); `.gitignore` temizlendi; CMake artık
+  `maps/`'i kuruyor.
+- ⚠️ **EKF hattı henüz canlı turda doğrulanmadı** — ilk koşuda `/localization/odom/final`
+  akışı ve rota takibi izlenmeli; sorun olursa `localization:=final_odom` ile devam.
+
+## 7. Önceki Değişiklikler (11–12 Temmuz — 7. tur sonrası paket)
 
 7\. canlı tur rotanın ~%70'ini tamamladı (4 kavşak dönüşü, kırmızıda dur/kalk,
 tünel temiz, park girişine varış). Kalan sorunlara yapılan düzeltmeler:
@@ -221,6 +282,27 @@ canlı kanıtlandı. Sıradaki iş: kısa görevle park-odaklı canlı koşu, so
 
 ```bash
 sudo apt install python3-colcon-common-extensions ros-jazzy-joint-state-publisher-gui python3-pynput
+# EKF lokalizasyon hattı için (bkz. §1):
+sudo apt install ros-jazzy-robot-localization ros-jazzy-pcl-ros ros-jazzy-pcl-conversions libpcl-dev
+git submodule update --init   # kiss-icp + pcl_localization_ros2
+# pcl_localization_ros2 Jazzy'de eski tf2 include'ları yüzünden derlenmez — yamayı uygula:
+git -C src/pcl_localization_ros2 apply ../../patches/pcl_localization_ros2_jazzy_includes.patch
 # Python: opencv (cv2), cv_bridge, numpy(<2), onnxruntime, pillow, tkinter
 # ONNX export gerekirse: pip install --user --break-system-packages "onnx>=1.12,<2" ultralytics
 ```
+
+> **Ağ notu:** kiss_icp derlemesi bağımlılıklarını (Sophus, oneTBB, robin-map)
+> codeload.github.com'dan tarball olarak indirir; bazı ağlarda (ör. bu WSL kurulumu)
+> bu host asılı kalıyor ama `git clone` çalışıyor. Takılırsa bağımlılıkları git ile
+> indirip cmake'e yerel dizin olarak verin:
+>
+> ```bash
+> D=~/.cache/kiss_icp_deps; mkdir -p $D; cd $D
+> git clone --depth 1 --branch 1.24.6    https://github.com/strasdat/Sophus.git
+> git clone --depth 1 --branch v1.4.0    https://github.com/Tessil/robin-map.git
+> git clone --depth 1 --branch v2022.1.0 https://github.com/uxlfoundation/oneTBB.git
+> cd ~/sim2_ws && colcon build --symlink-install --packages-select kiss_icp pcl_localization_ros2 \
+>   --cmake-args -DFETCHCONTENT_SOURCE_DIR_SOPHUS=$D/Sophus \
+>                -DFETCHCONTENT_SOURCE_DIR_TESSIL=$D/robin-map \
+>                -DFETCHCONTENT_SOURCE_DIR_TBB=$D/oneTBB
+> ```

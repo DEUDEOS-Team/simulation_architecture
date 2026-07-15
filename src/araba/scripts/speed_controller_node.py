@@ -41,8 +41,37 @@ REV_SPEED        = 2.00   # m/s = ~7.2 km/h (manuel geri vites)
 CONTROL_RATE     = 0.05   # 20 Hz kontrol döngüsü
 DATA_TIMEOUT     = 1.0    # algılama verisi bu saniyeden eskiyse güvenli moda geç
 SAFE_SPEED_RATIO = 0.3    # veri kesilince hızı bununla çarp
-MIN_SPEED        = 0.5    # m/s — en yavaş seyir (tam durmak yerine çok yavaş geçiş)
+# Kısıt tabanı: ışık/tabela kısıtları hızı düşürse de ~7 km/h altına inmesin. Tam duruş
+# (must_stop/acil), engel kısıtı ve zaten yavaş komut isteyen üst katman (ör. park
+# manevrası) bu tabandan muaftır.
+MIN_SPEED        = 1.94   # m/s ≈ 7 km/h — en yavaş seyir (tam durma değilse)
 START_DELAY      = 10.0   # saniye — simülasyon başladıktan sonra bekleme süresi
+
+# ── Eğriliğe orantılı hız ──
+# MIN_SPEED tabanına yapışık dönen araç viraj sıkışınca yavaşlayamıyor, açığı kapatmak
+# için direksiyona yükleniyor ve dönüşe geç kalıyordu. Artık tekerlek açısı büyüdükçe hız
+# tavanı düşer ve bu tavan MIN_SPEED tabanını ezer (taban düz yolda geçerli, virajda değil).
+# Direksiyon açısı: δ = atan(L·ω / v)  (Ackermann; L = dingil mesafesi)
+WHEELBASE_M       = 1.675   # URDF / Ackermann eklentisi ile aynı
+STEER_LIMIT_RAD   = 0.5236  # 30° — tam kilit (URDF eklem limiti = eklenti limiti)
+TURN_MIN_SPEED    = 1.20    # m/s — tam kilitteki hız tavanı (~4.3 km/h)
+TURN_FREE_STEER   = 0.09    # rad (~5°) — bu açının altında hız düşürülmez (düz yol)
+
+
+def _curvature_speed_cap(user_linear: float, user_angular: float) -> float:
+    """Tekerlek açısına göre hız tavanı. Düz yolda MAX_SPEED, tam kilitte TURN_MIN_SPEED.
+
+    δ hıza BAĞLI DEĞİL: hızı düşürünce angular.z de aynı oranla ölçeklendiği için
+    (bkz. aşağıdaki 'Direksiyonu ölçekle' bloğu) eğrilik ve dolayısıyla δ sabit
+    kalır — yani bu tavan kendi kendini besleyen bir döngü yaratmaz.
+    """
+    if abs(user_linear) < 1e-3:
+        return MAX_SPEED
+    delta = abs(math.atan(WHEELBASE_M * user_angular / user_linear))
+    if delta <= TURN_FREE_STEER:
+        return MAX_SPEED
+    t = min(1.0, (delta - TURN_FREE_STEER) / (STEER_LIMIT_RAD - TURN_FREE_STEER))
+    return MAX_SPEED - (MAX_SPEED - TURN_MIN_SPEED) * t
 
 
 class SpeedControllerNode(Node):
@@ -54,7 +83,7 @@ class SpeedControllerNode(Node):
         # ── DecisionArbiter ──
         self._arbiter = DecisionArbiter()
 
-        # ── Son bilinen cmd_vel (kullanıcı girişi) ──
+        # ── Son bilinen cmd_vel (sürücü/teleop girişi) ──
         self._raw_twist = Twist()
         self._raw_cmd_time: float | None = None
 
@@ -240,6 +269,12 @@ class SpeedControllerNode(Node):
             if (user_linear >= MIN_SPEED and 0.0 < target_linear < MIN_SPEED
                     and not emergency and not obs_constrains):
                 target_linear = MIN_SPEED
+
+            # EĞRİLİK TAVANI EN SONDA: MIN_SPEED tabanını da EZER. Taban "düz yolda
+            # sürünme" içindir; virajda araç yavaşlayabilmeli (bkz. _curvature_speed_cap).
+            curv_cap = _curvature_speed_cap(user_linear, user_angular)
+            if target_linear > curv_cap:
+                target_linear = curv_cap
 
         # ── Çıkış komutu oluştur ──
         out = Twist()

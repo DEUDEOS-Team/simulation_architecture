@@ -42,24 +42,36 @@ DYNAMIC_SLOW_DISTANCE_M = 10.0
 DYNAMIC_SLOW_SPEED_CAP = 0.4
 DYNAMIC_STOP_DISTANCE_M = 5.0
 DYNAMIC_CLEAR_FRAMES = 3
-STATIC_LANE_CHANGE_TRIGGER_M = 3.0
+# Kaçınma tetiği acil fren mesafesine yakın olursa manevra penceresi kalmıyor.
+# 5 m/s'de 7 m ≈ 1.4 s tepki penceresi kısaydı, kaçınma manevrası tamamlanamadan
+# çarpılıyordu; 9 m tetik daha erken karar için pay bırakır.
+STATIC_LANE_CHANGE_TRIGGER_M = 9.0
 STATIC_LANE_CHANGE_SPEED_CAP = 0.35
 STATIC_EMERGENCY_DISTANCE_M = 1.5
 
 # Sıralı statik engeller için kaçınma stabilizasyonu (zigzag azaltma)
 STATIC_AVOID_COMMIT_FRAMES = 6  # yön kararı en az bu kadar frame korunur
-STATIC_AVOID_CLEAR_DISTANCE_M = 4.5  # en yakın statik engel bu mesafeden uzaksa commit bırak
+# Commit bırakma eşiği tetikten BÜYÜK olmalı: aksi hâlde tetik-bırakma arası
+# bantta commit her karede silinip yön kararı yeniden verilir (zigzag riski).
+# Engel geçilip koridordan çıkınca commit zaten sıfırlanır.
+STATIC_AVOID_CLEAR_DISTANCE_M = 11.0  # en yakın statik engel bu mesafeden uzaksa commit bırak (tetik 9'u aşmalı)
 STATIC_AVOID_SWITCH_MARGIN_M = 0.6  # zıt tarafa geçmek için "daha belirgin" yakınlık farkı
 
 # Dinamik engelde dur-bekle sonrası kaçınma geçişi için minimum bekleme süresi.
 # Tick sayısına değil time.monotonic()'e dayandığı için ROS node Hz'inden bağımsız.
 DYNAMIC_AVOID_HOLD_S = 0.4
 
-# Yol-kapalı (road_blocked) kararı: "barrier_count > 1" tek başına yetmez —
-# tünel giriş duvarları da ≥1.5 m çapla "barrier" sınıflanıp 20 m öteden yolu
-# kapalı gösteriyordu (canlı 2026-07-11: karanlik_tunel yaklaşımında REPLAN
-# fırtınası). Kapalı ilanı için bariyerler YAKIN olmalı ve aralarında araç
-# sığacak yanal boşluk OLMAMALI (tünel ağzı ortası açık -> geçit sayılır).
+# Acil fren histerezisi: eşik dibindeki kamera tespitleri kare-kare girip çıkınca tek
+# karelik acil sinyaller kaçınma override'ını titretiyor (vehicle_controller OVERRIDE<->LANE
+# flap). Tek kare acil yok sayılır; arka arkaya EMERGENCY_CONFIRM_FRAMES kare sürerse ya da
+# engel gerçekten burnun dibindeyse (EMERGENCY_IMMEDIATE_DIST_M) anında geçer.
+EMERGENCY_CONFIRM_FRAMES = 2
+EMERGENCY_IMMEDIATE_DIST_M = 1.2
+
+# Yol-kapalı (road_blocked) kararı: "barrier_count > 1" tek başına yetmez — tünel giriş
+# duvarları da ≥1.5 m çapla "barrier" sınıflanıp 20 m öteden yolu kapalı gösteriyor ve
+# replan fırtınası çıkarıyordu. Kapalı ilanı için bariyerler yakın olmalı ve aralarında
+# araç sığacak yanal boşluk olmamalı (tünel ağzı ortası açık -> geçit sayılır).
 ROAD_BLOCKED_MAX_DISTANCE_M = 8.0
 ROAD_BLOCKED_MIN_GAP_M = 1.8
 
@@ -86,7 +98,11 @@ def is_dynamic_kind(kind: str) -> bool:
 
 
 def is_static_kind(kind: str) -> bool:
-    return kind in {ObstacleKind.CONE, ObstacleKind.BARRIER}
+    # UNKNOWN da statik sayılır: sıkı koni kümesi lidar'da 0.4-1.5 m çapla 'unknown'
+    # sınıflanınca iki listeye de girmiyor, kaçınma devreye girmiyor ama safety <3 m'de
+    # acil freni kilitliyordu. Tek dinamik sınıf yaya; tanınmayan duran nesne statik engel
+    # gibi geçilir.
+    return kind in {ObstacleKind.CONE, ObstacleKind.BARRIER, ObstacleKind.UNKNOWN}
 
 
 @dataclass
@@ -129,6 +145,7 @@ class ObstacleLogic:
         self._static_commit_dir: Optional[str] = None
         self._static_commit_frames_left: int = 0
         self._dynamic_stop_started_at: Optional[float] = None  # time.monotonic() zamanı
+        self._emergency_streak: int = 0  # ardışık acil kare sayacı (histerezis)
 
     def update(
         self,
@@ -153,8 +170,19 @@ class ObstacleLogic:
         analysis = self._safety.analyze(safety_dets)
         decision = analysis.decision
 
+        # Acil histerezisi (bkz. EMERGENCY_CONFIRM_FRAMES)
+        raw_emergency = bool(decision.emergency_stop)
+        self._emergency_streak = self._emergency_streak + 1 if raw_emergency else 0
+        immediate = (
+            decision.closest_obstacle_m is not None
+            and float(decision.closest_obstacle_m) < EMERGENCY_IMMEDIATE_DIST_M
+        )
+        debounced_emergency = raw_emergency and (
+            self._emergency_streak >= EMERGENCY_CONFIRM_FRAMES or immediate
+        )
+
         state = ObstacleState(
-            emergency_stop=decision.emergency_stop,
+            emergency_stop=debounced_emergency,
             speed_cap_ratio=decision.speed_cap_ratio,
             threat_level=decision.threat_level,
             closest_obstacle_m=decision.closest_obstacle_m,

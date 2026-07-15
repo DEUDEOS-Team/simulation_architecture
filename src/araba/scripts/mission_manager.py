@@ -52,10 +52,10 @@ class MissionManager:
             self.wp.advance()
             return self.wp.update(pos), dec
 
-        # PARK_ENTRY varışı: şartname sayacını (3 dk) başlat ama kontrolü vizyona
-        # VERME — cep koordinatı rotada zaten var (GeoJSON 'park' hedefi), oraya
-        # kadar waypoint sürüşü devam eder. (Canlı 2026-07-11: girişten itibaren
-        # tabela takibine geçmek aracı cep sırası boyunca gezdirip cebi kaçırttı.)
+        # PARK_ENTRY varışı: şartname sayacını (3 dk) başlat ama kontrolü vizyona verme —
+        # cep koordinatı rotada zaten var (GeoJSON 'park' hedefi), oraya kadar waypoint
+        # sürüşü devam eder. Girişten itibaren tabela takibine geçmek aracı cep sırası
+        # boyunca gezdirip cebi kaçırtıyor.
         if is_park_entry and state.arrived and not self._park_active:
             if self._park_started_at is None:
                 self._park_started_at = now_s

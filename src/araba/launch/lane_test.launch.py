@@ -1,9 +1,9 @@
 """
 Şerit modeli DENEME launch'ı (lane_test).
 
-Amaç: kullanıcının attığı şerit modelini/kodunu (lane_test_node) izole bir ortamda
-hızlıca denemek. Mevcut gazebo.launch.py'deki ağır algı node'ları (kamera tespiti,
-şerit, dashboard) BURADA yok — sadece:
+Amaç: şerit modelini/kodunu (lane_test_node) izole bir ortamda hızlıca denemek.
+Mevcut gazebo.launch.py'deki ağır algı node'ları (kamera tespiti, şerit, dashboard)
+burada yok — sadece:
   Gazebo + araç + kamera köprüsü + lane_test_node (OpenCV penceresi) + WASD kontrol
 
 Kullanım:

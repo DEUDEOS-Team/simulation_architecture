@@ -22,8 +22,8 @@ from typing import Optional
 
 # Sim kamerasıyla eşleştirildi (URDF: 1280x720, HFOV 1.2113 -> fx≈917.4, z=0.948).
 # Eski değerler (640x480, fx=320) mesafeyi ~3 kat yanlış kestiriyordu; faz eşikleri
-# hiç tetiklenmedi ve araç cep sırası boyunca tabela kovaladı (canlı 2026-07-11).
-# Bunlar yalnızca stereo/lidar mesafesi yokken kullanılan YEDEK kestirimlerdir.
+# hiç tetiklenmedi ve araç cep sırası boyunca tabela kovaladı.
+# Bunlar yalnızca stereo/lidar mesafesi yokken kullanılan yedek kestirimlerdir.
 CAMERA_HEIGHT_M = 0.948
 CAMERA_FOCAL_PX = 917.4
 PRINCIPAL_POINT_Y_PX = 360.0   # 720 / 2

@@ -51,14 +51,29 @@ class VehicleControllerNode(Node):
         # autonomous_control ile aynı Ackermann sabitleri (URDF)
         self.declare_parameter("wheel_base", 1.675)
         self.declare_parameter("steer_limit", 0.5236)      # rad, ±30°
-        # Hız ölçekleri: plan speed_limit ORANDIR (0..1) → m/s'ye bu çarpanla döner
-        self.declare_parameter("max_speed_mps", 2.5)       # şerit seyir hızıyla uyumlu (0.5·5.0 = 9 km/h)
-        self.declare_parameter("fallback_speed_mps", 1.4)  # kavşak dönüşü/sürünme hızı (~5 km/h)
-        # Tazelik pencereleri
-        self.declare_parameter("lane_lost_patience_s", 0.6)  # son DOLU center_pts'ten itibaren
+        # Hız ölçekleri: plan speed_limit orandır (0..1) → m/s'ye bu çarpanla döner.
+        # Daha yüksek değerlerde araç 13-15 km/h'de virajı alamıyor; 3.0 ile ~11 km/h
+        # tavan. Genel hızı düşürmek dönüş tespit mesafesini (6 m, geometrik) değiştirmez
+        # ama daha yavaş yaklaşım dönüşü tamamlamak için daha çok pay bırakır (steer tam
+        # kilide ulaşmaya vakit bulur) ve geç-tetikleme kazancıyla dönüşü güvenilir yapar.
+        self.declare_parameter("max_speed_mps", 3.0)
+        self.declare_parameter("fallback_speed_mps", 1.95) # kavşak dönüşü/sürünme hızı (~7 km/h)
+        # Tazelik pencereleri.
+        # Şerit segmentasyonunun kısa kesintileri her ~2.5 s'de LANE->PLAN'a düşürüyordu;
+        # PLAN modunda /cmd_vel_lane kullanılmadığından kaçınma ofseti de devre dışı
+        # kalıyordu. 1.2 s sabır bu kesintileri köprüler.
+        self.declare_parameter("lane_lost_patience_s", 1.2)  # son DOLU center_pts'ten itibaren
         self.declare_parameter("lane_cmd_timeout_s", 0.5)
-        self.declare_parameter("plan_timeout_s", 2.0)
-        self.declare_parameter("fusion_timeout_s", 0.5)
+        # mission_planning'in yeniden-yayın zamanlayıcısı 5 Hz ama sim saatinde; RTF ~0.2'de
+        # duvar saatinde ~1 Hz'e, yük altında daha da aşağı iniyor. Burada duvar saatiyle
+        # bakıldığından düşük eşik yalanıp araç durup durup kalkıyordu. Plan referansı yavaş
+        # değişen bir sinyal; 5 s bayatlık zararsız.
+        self.declare_parameter("plan_timeout_s", 5.0)
+        # GPU+tkinter yükü altında pipeline decision_debug'ı ~0.3–0.6 s jitter'la yayınlayınca
+        # override tazeliği arada düşüp OVERRIDE<->LANE çırpınıyor (kaçınma manevrası kekeliyor).
+        # Birleşik kaçınma steer'i manevra boyunca kesintisiz üretilir; pencereyi 1.0 s'ye
+        # çıkarmak jitter'ı yutar.
+        self.declare_parameter("fusion_timeout_s", 1.0)
         self.declare_parameter("lane_cmd_topic", "/cmd_vel_lane")
         self.declare_parameter("cmd_out_topic", "/cmd_vel_raw")
         # Kavşak dönüş önceliği: mission_planning turn_active yayınlarken şerit
@@ -84,12 +99,21 @@ class VehicleControllerNode(Node):
         self._turn_active = False
         self._turn_stamp = 0.0
         self._mode = ""                      # log için: LANE / PLAN / TURN / OVERRIDE / STOP
+        # Engelden kaçınma direksiyon düzeltmesi (avoidance_node, oran + = SAĞA).
+        # Moddan bağımsız: LANE/PLAN/TURN hangisi sürüyorsa onun üstüne eklenir. Kaçınmayı
+        # yalnız /cmd_vel_lane üzerinden uygularsak, engelin olduğu yerde şerit segmentasyonu
+        # düşüp mod PLAN'a geçiyor ve kaçınma komutu tamamen yok sayılıyor.
+        self._avoid_steer = 0.0
+        self._avoid_stamp = 0.0
+        self._avoid_log_t = 0.0
+        self.declare_parameter("avoid_steer_timeout_s", 1.0)
 
         self.create_subscription(
             Twist, str(self.get_parameter("lane_cmd_topic").value), self._lane_cmd_cb, 10)
         self.create_subscription(
             Float32MultiArray, "/perception/center_pts", self._center_pts_cb, 10)
         self.create_subscription(Float32, "/planning/steering_ref", self._plan_steer_cb, 10)
+        self.create_subscription(Float32, "/planning/avoid_steer", self._avoid_steer_cb, 10)
         self.create_subscription(Float32, "/planning/speed_limit", self._plan_speed_cb, 10)
         self.create_subscription(String, "/perception/decision_debug", self._decision_cb, 10)
         self.create_subscription(
@@ -135,7 +159,19 @@ class VehicleControllerNode(Node):
         except Exception:
             self._ovr_active = False
 
+    def _avoid_steer_cb(self, msg: Float32) -> None:
+        self._avoid_steer = float(msg.data)
+        self._avoid_stamp = time.monotonic()
+
     # ── yardımcılar ──
+    def _twist_to_ratio(self, t: Twist) -> float:
+        """Twist (angular.z) -> direksiyon oranı (+ = SAĞA). _ratio_to_twist'in tersi."""
+        v = float(t.linear.x)
+        if abs(v) < 1e-3:
+            return 0.0
+        steer_rad = math.atan(float(t.angular.z) * self._wheel_base / v)
+        return -steer_rad / self._steer_limit
+
     def _ratio_to_twist(self, steer_ratio: float, v: float) -> Twist:
         """Pozitif=SAĞA direksiyon oranı + hız → ROS Twist (angular.z pozitif=SOLA)."""
         t = Twist()
@@ -191,6 +227,22 @@ class VehicleControllerNode(Node):
         else:
             cmd = Twist()
             mode = "STOP"
+
+        # ── Engelden kaçınma düzeltmesi (moddan bağımsız) ──
+        # LANE/PLAN/TURN — hangisi sürüyorsa onun direksiyonuna eklenir. Böylece şerit
+        # kaybolup PLAN'a düşsek bile kaçınma devrede kalır. STOP'ta ve OVERRIDE'da
+        # uygulanmaz (araç zaten duruyor / üst katman sürüyor).
+        avoid_fresh = (now - self._avoid_stamp) < float(
+            self.get_parameter("avoid_steer_timeout_s").value)
+        if avoid_fresh and abs(self._avoid_steer) > 1e-3 and mode in ("LANE", "PLAN", "TURN"):
+            base_ratio = self._twist_to_ratio(cmd)
+            new_ratio = max(-1.0, min(1.0, base_ratio + self._avoid_steer))
+            cmd = self._ratio_to_twist(new_ratio, float(cmd.linear.x))
+            if abs(self._avoid_steer) > 0.05 and (now - self._avoid_log_t) > 1.0:
+                self._avoid_log_t = now
+                self.get_logger().info(
+                    f"KAÇINMA DÜZELTMESİ [{mode}] taban={base_ratio:+.2f} "
+                    f"+ kaçınma={self._avoid_steer:+.2f} -> {new_ratio:+.2f}")
 
         if mode != self._mode:
             self.get_logger().info(

@@ -1,7 +1,7 @@
 {
   "type": "FeatureCollection",
   "properties": {
-    "generator": "generate_teknofest_geojson.py",
+    "generator": "kavşak dönüş testi — teknofest_gorev.geojson kısaltması (durak_1 öncesi atlandı)",
     "datum": [
       40.7899,
       29.5089
@@ -14,13 +14,13 @@
         "id": 0,
         "name": "start",
         "task": "baslangic",
-        "note": "spawn noktasi; A yolu kuzey serit"
+        "note": "test spawn: ENU(-36.0, 18.0), durak_2 oncesi"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          29.5094332,
-          40.7900441
+          29.5084723,
+          40.7900619
         ]
       }
     },
@@ -28,22 +28,6 @@
       "type": "Feature",
       "properties": {
         "id": 1,
-        "name": "durak_1",
-        "task": "durak",
-        "note": "durak levhasi (0.69, 26.15) onu; 1. yol bati serit"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          29.5089082,
-          40.7901161
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "id": 2,
         "name": "durak_2",
         "task": "durak",
         "note": "durak_0 levhasi (-39.01, 12.55) onu; D yolu guney serit"
@@ -59,7 +43,7 @@
     {
       "type": "Feature",
       "properties": {
-        "id": 3,
+        "id": 2,
         "name": "park_giris",
         "task": "park_giris",
         "note": "park erisim yoluna donusten hemen sonra (tek cizgi cift yon)"
@@ -75,15 +59,15 @@
     {
       "type": "Feature",
       "properties": {
-        "id": 4,
+        "id": 3,
         "name": "park",
         "task": "park_yeri",
-        "note": "2026-07-14: x 25.2->11.1 (koridor GIRISINE cekildi, kullanici istegi); ortadaki (25.2) yerine giris dugumu (11.1,-63.4) hedeflenir"
+        "note": "park_yeri_1 levhasi onundeki cep; koridordan guneye manevra"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          29.5090315,
+          29.5091986,
           40.7892516
         ]
       }

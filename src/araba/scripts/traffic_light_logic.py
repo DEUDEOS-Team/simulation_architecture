@@ -73,11 +73,30 @@ STATIONARY_SPEED_EPS_MPS = 0.08
 # kilidi bırak (tam ışık döngüsünden uzun olmalı; araç sonsuza dek beklemesin)
 RED_LATCH_TIMEOUT_S = 45.0
 
-# Bayat YEŞİL: kavşağa yaklaşırken yeşil görülüp ışık görüş dışına çıkarsa
-# (yakında direk kadraj dışı kalır) faz değişimi görülemez — kırmızıya dönmüş
-# olabilir. Bellek düştükten sonra bu pencere boyunca sürünme tavanı uygula;
-# pencere dolunca kavşak geçilmiş sayılır (canlı 2026-07-11: 2. ışıkta dönüş
-# sırasında 8 sn'lik körlük yaşandı).
+# Mono kamerada stereo mesafe üretilemiyor (sim) — bbox yüksekliğinden kestirim.
+# Sim traffic_light modeli: 3 lamba kolonu (üst kürenin tepesi - alt kürenin dibi)
+# ~0.71 m; kamera fx=fy=917.4 px (1280x720, 69.4° HFOV). d = H*f/h_px.
+# Amaç: uzaktaki alakasız kavşağın ışığı aracı durdurmasın — karar, "mesafe
+# bilinmiyor->dur" yerine mesafe bantlarıyla verilsin.
+LIGHT_STACK_HEIGHT_M = 0.71
+CAMERA_FOCAL_PX = 917.4
+BBOX_DIST_MAX_M = 80.0
+
+
+def _distance_from_bbox_h(bbox_px) -> Optional[float]:
+    """Bbox piksel yüksekliğinden ışık mesafesi (stereo yoksa yedek kestirim)."""
+    try:
+        h = float(bbox_px[3]) - float(bbox_px[1])
+    except (TypeError, IndexError, ValueError):
+        return None
+    if h <= 1.0:
+        return None
+    return min(BBOX_DIST_MAX_M, LIGHT_STACK_HEIGHT_M * CAMERA_FOCAL_PX / h)
+
+# Bayat yeşil: kavşağa yaklaşırken yeşil görülüp ışık görüş dışına çıkarsa (yakında
+# direk kadraj dışı kalır) faz değişimi görülemez — kırmızıya dönmüş olabilir. Bellek
+# düştükten sonra bu pencere boyunca sürünme tavanı uygula; pencere dolunca kavşak
+# geçilmiş sayılır.
 GREEN_STALE_WINDOW_S = 6.0
 GREEN_STALE_SPEED_RATIO = 0.5
 
@@ -131,7 +150,14 @@ class TrafficLightLogic:
         red_hard_speed_ratio: float = 0.5,
         red_soft_speed_ratio: float = 0.8,
         red_unknown_must_stop: bool = True,
+        red_commit_m: float = 6.5,
     ) -> None:
+        # Dur kararı ışık hâlâ görünürken verilmeli: kamera dikey FOV 42.6° ve lamba
+        # yerden ~2.8 m olduğundan ışık 4.2-5.5 m kala görüş alanından çıkıyor. must_stop
+        # yalnız ≤3 m'de tetiklenseydi hiç çalışmaz, araç kırmızıda geçerdi. red_commit_m
+        # (6.5) FOV çıkışının üstünde: karar ışık görünürken verilir, kilit (RED_LATCH)
+        # kurulur, araç ~6 m'de durur ve yeşil de o mesafeden görünür (kilit yeşille açılır).
+        self._red_commit_m = float(red_commit_m)
         self._red_emergency_m = float(red_emergency_m)
         self._red_hard_m = float(red_hard_m)
         self._red_soft_m = float(red_soft_m)
@@ -159,6 +185,9 @@ class TrafficLightLogic:
         if now is None:
             now = time.monotonic()
         detections = [d for d in detections if d.confidence >= MIN_CONFIDENCE]
+        for d in detections:
+            if d.estimated_distance_m is None:
+                d.estimated_distance_m = _distance_from_bbox_h(d.bbox_px)
         self._update_memory(detections, now)
         self._forget_expired(now)
         active = [m for m in self._memories.values() if m.confirmed]
@@ -318,10 +347,13 @@ class TrafficLightLogic:
                 return state
 
             d = float(dist)
-            if d <= self._red_emergency_m:
+            # COMMIT: ışık hâlâ görünürken (>FOV çıkışı ~5.5 m) dur kararı ver ve
+            # kilitle. Aksi hâlde araç durma bandına girmeden ışığı kaybediyor.
+            if d <= self._red_commit_m:
                 state.must_stop = True
                 state.speed_cap_ratio = 0.0
-                state.reason = f"RED light emergency band (d<={self._red_emergency_m:.1f}m) at {d:.1f}m"
+                band = ("emergency" if d <= self._red_emergency_m else "commit")
+                state.reason = f"RED light {band} band (d<={self._red_commit_m:.1f}m) at {d:.1f}m -> STOP+latch"
                 return state
             if d <= self._red_hard_m:
                 state.must_stop = False
@@ -347,6 +379,11 @@ class TrafficLightLogic:
             dist_txt = f"{dist:.1f}m" if dist is not None else "?"
 
             after_red = self._last_non_yellow == LightColor.RED
+            # Uzak (alakasız) kavşağın sarısı davranışı etkilemesin — kırmızıyla
+            # aynı "soft" bandın ötesindeki sarı yalnız bilgi olarak kalır.
+            if dist is not None and float(dist) > self._red_soft_m:
+                state.reason = f"YELLOW far (d>{self._red_soft_m:.1f}m) ignored at {float(dist):.1f}m"
+                return state
             if after_red:
                 # Kırmızıdan sonra sarı: harekete hazırlık (yeşile geçiş öncesi)
                 state.prepare_to_move = True

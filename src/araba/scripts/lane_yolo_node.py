@@ -2,8 +2,7 @@
 """
 Şerit takip DENEME node'u #2 — ULTRALYTICS YOLO maskeleme tekniği (lane_yolo_node).
 
-Kaynak: kullanıcının kök dizine attığı `test_onnx.py`. Maskeleme mantığı oradan
-BİREBİR alınmıştır:
+Maskeleme mantığı ultralytics YOLO ile:
   - ultralytics.YOLO(model, task='segment') ile segmentasyon (letterbox/NMS/maske
     decode'unu ultralytics kendi içinde yapar — elle onnxruntime postprocess YOK)
   - results.masks.xy POLİGON noktaları kullanılır — bunlar ZATEN orijinal görüntü

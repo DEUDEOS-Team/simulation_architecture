@@ -435,6 +435,28 @@
       <name>traffic_cone_3</name>
       <pose>24.865566982384649 21.733112276726388 0 0 0 0</pose>
     </include>
+    <!-- Slalom parkuru. Koniler, araç 1-bati şeridinde (merkez y=24.0) batıya düz
+         giderken karşılaşacak şekilde dizildi. Şerit merkezinin dönüşümlü olarak 0.8 m
+         kuzeyine/güneyine konurlar -> araç her koniyi ters yönden geçmek zorunda kalır
+         (slalom). Şişirme ~1.2 m olduğundan y=24.8'deki koni [23.6..26.0] bandını kapatır;
+         en yakın serbest yer güneydedir, sıradaki koni güneyde olunca kuzeye döner.
+         Dönüş yapılan x=45 kavşağından sonra ilk koniye 12 m düz koşu var (algı için şart). -->
+    <include>
+      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <name>engel_koni_1</name>
+      <pose>28.0 24.8 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <name>engel_koni_2</name>
+      <pose>16.0 22.8 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/traffic_cone</uri>
+      <name>engel_koni_3</name>
+      <pose>8.0 24.8 0 0 0 0</pose>
+    </include>
+    <!-- Slalom 3 tekli koniyle yapılıyor (eski engel_koni_4/5 kaldırıldı). -->
     <include>
       <uri>file:///home/bekir/sim2_ws/otonom_projem/models/saga_donulmez</uri>
       <name>saga_donulmez</name>
@@ -474,6 +496,13 @@
       <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sola_donulmez</uri>
       <name>sola_donulmez</name>
       <pose>26.898099091514446 -14.111856825308676 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>file:///home/bekir/sim2_ws/otonom_projem/models/sola_donulmez</uri>
+      <name>sola_donulmez_1</name>
+      <!-- Ilk kavsagin (D-guney -> 2-dogu, dugum 47) oncesi; guneye giden surucuye
+           bakar (durak_0 ile ayni yonelim konvansiyonu) -->
+      <pose>-38.7 10.0 0 0 0 1.71</pose>
     </include>
     <include>
       <uri>file:///home/bekir/sim2_ws/otonom_projem/models/durak</uri>

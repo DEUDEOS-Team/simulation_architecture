@@ -2,9 +2,8 @@
 """
 Şerit takip DENEME node'u (lane_test_node).
 
-Kaynak: kullanıcının kök dizine attığı ros2deneme.py. Görüntü işleme mantığı
-(preprocess / postprocess / curve fitting / çizim) BİREBİR korunmuştur; yalnızca
-ROS 2 entegrasyonu için 3 değişiklik yapıldı:
+Görüntü işleme mantığı (preprocess / postprocess / curve fitting / çizim) ONNX
+şerit modeliyle çalışır; ROS 2 entegrasyonu için 3 nokta:
   1) Kamera topic'i parametrik, varsayılan = /camera/image  (bridge'deki gerçek topic)
   2) Model yolu parametrik; varsayılan paket içinden çözülür (göreceli yol patlamasın)
   3) İşlenmiş çıktı otomatik bir OpenCV penceresinde gösterilir (show_window=True)

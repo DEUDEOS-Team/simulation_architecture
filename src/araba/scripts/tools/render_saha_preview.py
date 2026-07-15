@@ -46,9 +46,9 @@ MAP_FILE = os.path.join(MISSIONS, "map_islenmis.geojson")
 OUT_PNG = os.path.join(MISSIONS, "saha_onizleme.png")
 GOREV_FILE = os.path.join(MISSIONS, "saha_deneme_gorev.geojson")
 
-# Deneme görevi — noktalar uydu görüntüsündeki GERÇEK saha öğelerine oturtuldu.
-# Duraklar kullanıcının işaretlediği ceplerdir (2026-07-08): durak_A = sol alt
-# kenardaki cep (ring'in dış tarafında), durak_B = alt kenarın sağındaki cep.
+# Deneme görevi — noktalar uydu görüntüsündeki gerçek saha öğelerine oturtuldu.
+# Duraklar işaretli ceplerdir: durak_A = sol alt kenardaki cep (ring'in dış
+# tarafında), durak_B = alt kenarın sağındaki cep.
 # park = sağ üstteki gerçek park alanının girişe yakın cebi (ağ oraya fid=14
 # stub'ıyla girer; alan içi çizilmediğinden rota girişte biter).
 DEMO_MISSION = [

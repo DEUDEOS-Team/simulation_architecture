@@ -5,6 +5,7 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
+    OpaqueFunction,
     SetEnvironmentVariable,
     TimerAction,
 )
@@ -25,9 +26,50 @@ from launch_ros.substitutions import FindPackageShare
 # spawn-göreli /odom ve /imu/data'sını dünya (ENU) koordinatına çevirir — create ile senkron kalmalı.
 SPAWN_X, SPAWN_Y, SPAWN_Z, SPAWN_YAW = 45.31, 16.0, 0.51, 1.58
 # GPS datumu — benim_dunyam.sdf içindeki <spherical_coordinates> ile senkron kalmalı.
-# 2026-07-07: Gerçek yarışma sahasının merkezine taşındı (missions/map.geojson —
-# arkadaşın sahadan aldığı yol ağı — merkezi ~40.7898904, 29.5088876).
+# Gerçek yarışma sahasının merkezine oturtuldu (missions/map.geojson yol ağı,
+# merkezi ~40.7898904, 29.5088876).
 DATUM_LAT, DATUM_LON = 40.7899, 29.5089
+
+
+def _make_ekf_nodes(context):
+    """localization:=ekf iken navsat+EKF düğümlerini spawn pozuyla kurar."""
+    if context.launch_configurations.get('localization', 'ekf') != 'ekf':
+        return []
+    pkg_share = get_package_share_directory('araba')
+    ekf_config_path = os.path.join(pkg_share, 'config', 'ekf.yaml')
+    sx = float(context.launch_configurations['spawn_x'])
+    sy = float(context.launch_configurations['spawn_y'])
+    syaw = float(context.launch_configurations['spawn_yaw'])
+    # robot_localization initial_state: [x y z, roll pitch yaw, vx vy vz,
+    #                                    vroll vpitch vyaw, ax ay az]
+    initial_state = [sx, sy, 0.0, 0.0, 0.0, syaw,
+                     0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    return [
+        Node(
+            package='robot_localization',
+            executable='navsat_transform_node',
+            name='navsat_transform',
+            output='screen',
+            parameters=[ekf_config_path, {'yaw_offset': syaw}],
+            remappings=[
+                ('gps/fix', '/gps/fix'),
+                ('imu', '/imu/data'),
+                # EKF'nin ürettiği güncel konumu dinleyip datum'u düzeltir
+                ('odometry/filtered', '/localization/odom/final'),
+                # EKF'ye odom0 olarak gidecek metrik GPS çıktısı
+                ('odometry/gps', '/odometry/gps'),
+            ]),
+        Node(
+            package='robot_localization',
+            executable='ekf_node',
+            name='ekf_filter_node',
+            output='screen',
+            parameters=[ekf_config_path, {'initial_state': initial_state}],
+            remappings=[
+                # EKF çıktısını mission_planning'in beklediği topice yönlendir
+                ('odometry/filtered', '/localization/odom/final'),
+            ]),
+    ]
 
 
 def generate_launch_description():
@@ -47,7 +89,7 @@ def generate_launch_description():
     ekf_config_path = os.path.join(pkg_share, 'config', 'ekf.yaml')
     rviz_config = os.path.join(pkg_share, 'config', 'lidar_view.rviz')
     detection_model_path = os.path.join(pkg_share, 'models', 'onnx', 'detection.onnx')
-    # 2026-07-11: yeni gazeboset yolov8s-seg modeli (model.onnx); eski model lane_seg.onnx'te yedek
+    # yolov8s-seg şerit modeli (model.onnx); eski model lane_seg.onnx'te yedek
     lane_model_path = os.path.join(pkg_share, 'models', 'onnx', 'model.onnx')
 
     robot_description = ParameterValue(Command(['xacro ', urdf_path]), value_type=str)
@@ -101,9 +143,14 @@ def generate_launch_description():
                               description='mission_planning yol ağı GeoJSON yolu'),
         DeclareLaunchArgument('world', default_value='benim_dunyam.sdf',
                               description='worlds/ altındaki dünya dosyası (ör. saha_dunyasi.sdf)'),
-        DeclareLaunchArgument('localization', default_value='ekf',
-                              description="ekf: robot_localization+KISS-ICP | "
-                                          "final_odom: eski GPS+IMU füzyon node'u (yedek)"),
+        # Varsayılan = final_odom. EKF hattı simde bozuk: navsat_transform wait_for_datum
+        # ile aracı sürekli datum'un üstünde sanıyor (/gps/filtered = tam datum,
+        # /odometry/gps = (0,0,0)) → EKF'nin tek mutlak konum kaynağı sıfır → final_odom
+        # konumu (0,0)'da takılı kalıyor, sadece yön doğru. Bu sessizce hem lidar yol
+        # maskesini hem görev planlamayı bozuyor.
+        DeclareLaunchArgument('localization', default_value='final_odom',
+                              description="final_odom: GPS+IMU+odom füzyon node'umuz (simde ÇALIŞAN) | "
+                                          "ekf: robot_localization+KISS-ICP (arda'nın hattı, simde konum bozuk)"),
         # Spawn pozu; saha dünyası için start noktası: -38.53 -0.91 yaw=-0.85
         DeclareLaunchArgument('spawn_x', default_value=str(SPAWN_X)),
         DeclareLaunchArgument('spawn_y', default_value=str(SPAWN_Y)),
@@ -187,47 +234,32 @@ def generate_launch_description():
                                                'centerlines_file': centerlines_file}]),
         ]),
 
-        # ============ LOKALİZASYON (localization:=ekf | final_odom) ============
-        # Her iki hat da /localization/odom/final üretir (mission_planning'in girdisi).
-
-        # [ekf] GPS verisini EKF'nin anlayacağı metrik odometriye çeviren düğüm.
-        # yaw_offset launch'taki spawn_yaw'dan gelir: Gazebo IMU'su spawn yönünü 0 kabul
-        # eder; ENU yaw = IMU yaw + spawn_yaw (ekf.yaml'daki sabit değeri ezer, böylece
-        # rotanın ortasından spawn'lı testlerde de pusula doğru başlar).
-        TimerAction(period=6.9, actions=[
-            Node(
-                package='robot_localization',
-                executable='navsat_transform_node',
-                name='navsat_transform',
-                output='screen',
-                condition=use_ekf,
-                parameters=[ekf_config_path,
-                            {'yaw_offset': ParameterValue(spawn_yaw, value_type=float)}],
-                remappings=[
-                    ('gps/fix', '/gps/fix'),
-                    ('imu', '/imu/data'),
-                    # EKF'nin ürettiği güncel konumu dinleyip datum'u düzeltir
-                    ('odometry/filtered', '/localization/odom/final'),
-                    # EKF'ye odom0 olarak gidecek metrik GPS çıktısı
-                    ('odometry/gps', '/odometry/gps')
-                ]
-            ),
+        # Engelden kaçınma — boşluk takibi. /perception/lidar_obstacles →
+        # /planning/lateral_offset (metre, + = SOL). Direksiyon üretmez: ofseti
+        # autonomous_control_node kamera hedefine uygular.
+        # use_sim_time açık: RTF ~0.2'de lidar duvar saatinde ~1.7 Hz akıyor. Ofsetin hız
+        # sınırı (m/s) ve sönümlemesi aracın yaşadığı zamanla aynı birimde olmalı — duvar
+        # saatinde 1.2 m/s sim'de ~6 m/s ediyor ve ofset fırlıyor. Tazelik eşikleri de bu
+        # yüzden sim saniyesi.
+        # centerlines_file: aracın şerit merkezine göre yanal konumunu ölçmek için
+        # (GPS+harita; kamera şerit noktaları düştüğünde de "yoldan çıkma" kısıtı ayakta kalsın).
+        TimerAction(period=7.1, actions=[
+            Node(package='araba', executable='avoidance_node.py', name='avoidance_node',
+                 output='screen', parameters=[{'use_sim_time': True,
+                                               'centerlines_file': centerlines_file,
+                                               'datum_lat': DATUM_LAT,
+                                               'datum_lon': DATUM_LON}]),
         ]),
 
-        # [ekf] Genişletilmiş Kalman Filtresi (GPS pozisyon + KISS-ICP hız + IMU yaw)
-        TimerAction(period=7.0, actions=[
-            Node(
-                package='robot_localization',
-                executable='ekf_node',
-                name='ekf_filter_node',
-                output='screen',
-                condition=use_ekf,
-                parameters=[ekf_config_path],
-                remappings=[
-                    # EKF'nin çıktısını, mission_planning_node'un beklediği topice yönlendiriyoruz
-                    ('odometry/filtered', '/localization/odom/final')
-                ]
-            ),
+        # ============ LOKALİZASYON (localization:=ekf | final_odom) ============
+        # Her iki hat da /localization/odom/final üretir (mission_planning'in girdisi).
+        # [ekf] navsat_transform + ekf_node — OpaqueFunction ile kurulur çünkü
+        # spawn değerlerinin FLOAT olarak initial_state/yaw_offset'e girmesi gerekir.
+        # initial_state verilmeyince EKF (0,0)/yaw=0'dan başlıyor → ~40 m konum + 90° yön
+        # hatasıyla sürüş. Gazebo IMU'su spawn yönünü 0 kabul ettiğinden yaw_offset=spawn_yaw
+        # da şart.
+        TimerAction(period=6.9, actions=[
+            OpaqueFunction(function=_make_ekf_nodes),
         ]),
 
         # [final_odom] Eski GPS(pozisyon)+IMU(yön)+odom(hız) füzyon node'umuz — yedek
@@ -243,8 +275,17 @@ def generate_launch_description():
         ]),
 
         TimerAction(period=7.0, actions=[
+            # use_sim_time kapalı: 5 Hz durum zamanlayıcısı sim saatinde RTF~0.22 ile ~1.1 Hz'e
+            # düşüyor; tazelik kontrolleri ise duvar saatinde -> yayınlar "bayat" görünüp cap
+            # titremesi + 1 Hz kontrol yaratıyordu. İç mantık zaten time.monotonic() kullanıyor.
+            # enable_slalom=False: engel-geçme testinde slalom weave'i kaçınmayla karışıyordu;
+            # slalom parkuru çalışılırken açılacak.
             Node(package='araba', executable='perception_pipeline_node', name='perception_pipeline_node',
-                 output='screen', parameters=[{'use_sim_time': True, 'show_dashboard': True}]),
+                 # show_dashboard kapalı: Tkinter dashboard'u her kamera karesini 1280x720
+                 # dönüştürüp ekrana basıyor ve WSLg'de şerit takip penceresini donduruyor.
+                 # Teşhis için: show_dashboard:=true ile aç.
+                 output='screen', parameters=[{'use_sim_time': False, 'show_dashboard': False,
+                                               'enable_slalom': False}]),
         ]),
 
         # Görev planlama — missions/*.geojson + /localization/odom/final →
@@ -287,9 +328,9 @@ def generate_launch_description():
                  remappings=[('/cmd_vel', '/cmd_vel_lane')],
                  parameters=[{'use_sim_time': True,
                               'cam_width': 1280.0,
-                              # throttle 0.5 -> 2.5 m/s (9 km/h seyir), 0.35 -> 1.75 (6.3 km/h viraj)
-                              # (arda 10.0 denedi; dönüş/durma ayarlarımız 5.0'a göre kanıtlı)
-                              'speed_scale': 5.0}]),
+                              # throttle 0.5 -> 4.0 m/s (~14 km/h düz), 0.35 -> 2.8 (~10 km/h viraj);
+                              # daha yüksek değerde 13-15 km/h'de viraj alınamıyor.
+                              'speed_scale': 8.0}]),
         ]),
 
         # Araç kontrol arbiter'ı (mimari vehicle_controller'ın sim uyarlaması, 5. adım):
@@ -304,8 +345,10 @@ def generate_launch_description():
         # Hız güvenlik katmanı — /cmd_vel_raw + algı durumları → /cmd_vel
         # Kırmızı ışıkta durur, levha hız sınırı uygular, engelde acil fren yapar.
         TimerAction(period=7.8, actions=[
+            # use_sim_time KAPALI: 20 Hz kontrol döngüsü duvar saatinde kalsın
+            # (DATA_TIMEOUT karşılaştırmaları da duvar saati — bkz. pipeline notu)
             Node(package='araba', executable='speed_controller_node', name='speed_controller_node',
-                 output='screen', parameters=[{'use_sim_time': True}]),
+                 output='screen', parameters=[{'use_sim_time': False}]),
         ]),
 
         # Manuel WASD kontrol — sadece manuel:=true iken. Komut yine /cmd_vel_raw'a

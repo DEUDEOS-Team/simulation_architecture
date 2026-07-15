@@ -11,15 +11,15 @@ Bu araç:
      içindeyse karşı çizgiye tam izdüşüm noktasında köşe ekler ve ucu oraya taşır.
   2. Property değerlerindeki baş/son boşlukları kırpar (ör. ' yol' → 'yol').
   3. (--oneway ile) Yön atar: saha yolları hep çift şerit (gidiş/geliş ayrı çizgi)
-     ve trafik SAĞDAN akar (kullanıcı teyidi, 2026-07-07). Her şeridin yönü,
+     ve trafik sağdan akar. Her şeridin yönü,
      karşı yön ikizinin SOLDA kalacağı şekilde seçilir; kavşak dönüş kavislerinin
      yönü ise uçlarının bağlandığı şeritlerin akışından türetilir. Yönü çizim
      sırasının tersi çıkan çizgilerin koordinat dizisi ters çevrilir ve tüm
      yönlendirilenlere `oneway: true` yazılır. Güvenle yönlendirilemeyenler
      çift yön bırakılıp raporlanır.
   4. TUNNEL_FIDS içindeki çizgilere `tunnel: true` yazar (tünel iskeleti uydu
-     görüntüsünde fid=41 şeridinin tam üstünde; fid=3 onun karşı yön ikizi —
-     2026-07-08 tespiti). route_planner tünel-zorunlu rota için bunu okur.
+     görüntüsünde fid=41 şeridinin tam üstünde; fid=3 onun karşı yön ikizi).
+     route_planner tünel-zorunlu rota için bunu okur.
   5. Sonucu ayrı dosyaya yazar — ORİJİNALE DOKUNMAZ.
 
 Kullanım:

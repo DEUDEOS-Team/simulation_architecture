@@ -12,7 +12,7 @@ map.jpeg üzerine çizer:
 
 Çıktı: missions/rota_onizleme.png
 
-Piksel↔dünya kalibrasyonu 2026-07-06'da dünya nesne pozlarıyla doğrulandı
+Piksel↔dünya kalibrasyonu dünya nesne pozlarıyla doğrulandı
 (map.jpeg 1600×1210, dünyada 97×120 m kutu, 90° dönük):
   u = (35.782 − y) · 13.333   [px]
   v = (48.5  − x) · 12.474    [px]
@@ -21,6 +21,7 @@ Datum değişirse önce generate_teknofest_geojson.py yeniden çalıştırılır
 sonra bu script (datum'u geojson properties.datum'dan okur).
 """
 
+import argparse
 import json
 import math
 import os
@@ -67,6 +68,14 @@ def world_to_px(x: float, y: float) -> tuple[float, float]:
 
 
 def main() -> None:
+    # --start N: rotayı N. node'dan başlıyormuş gibi çiz (1 = tam rota).
+    # N>1 iken ayrı dosyaya yazar; asıl rota_onizleme.png bozulmaz.
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--start", type=int, default=1,
+                    help="rotanın kaçıncı node'undan başlansın (1 = tam rota)")
+    args = ap.parse_args()
+    start_idx = max(0, int(args.start) - 1)
+
     cl_path = os.path.join(MISSIONS, "teknofest_centerlines.geojson")
     gj_path = os.path.join(MISSIONS, "teknofest_gorev.geojson")
 
@@ -78,6 +87,11 @@ def main() -> None:
     graph = build_graph_from_centerlines_geojson(cl, coord_round_decimals=7)
     plan = GeoJsonMissionReader().read_file(gj_path)
     routed = route_mission_plan_via_graph(plan, graph, tunnel_mandatory=True)
+
+    # N. node'dan başla: öncesindeki waypoint'ler atılır, numaralar 1'den başlar
+    route_pts = list(routed.points)[start_idx:]
+    out_png = OUT_PNG if start_idx == 0 else os.path.join(
+        MISSIONS, f"rota_onizleme_node{start_idx + 1}.png")
 
     img = Image.open(MAP_JPEG).convert("RGB")
     draw = ImageDraw.Draw(img)
@@ -120,8 +134,8 @@ def main() -> None:
                     fill=(15, 55, 160))
 
     # ── planlanan rota: turuncu hat + yön okları + ara kavşak numaraları ──
-    if routed.points:
-        pts = [px(p.lat, p.lon) for p in routed.points]
+    if route_pts:
+        pts = [px(p.lat, p.lon) for p in route_pts]
         draw.line(pts, fill=(255, 140, 0), width=8)
         # her segmentin ortasına gidiş yönü oku
         for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
@@ -140,7 +154,7 @@ def main() -> None:
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18)
         except OSError:
             small = ImageFont.load_default()
-        for i, p in enumerate(routed.points):
+        for i, p in enumerate(route_pts):
             if p.task != "checkpoint":
                 continue
             u, v = pts[i]
@@ -167,7 +181,7 @@ def main() -> None:
     except OSError:
         font = ImageFont.load_default()
     # Numara = rotadaki sürüş sırası (ara kavşak numaralarıyla aynı seri)
-    for i, mp in enumerate(routed.points):
+    for i, mp in enumerate(route_pts):
         if mp.task == "checkpoint":
             continue
         u, v = px(mp.lat, mp.lon)
@@ -203,10 +217,9 @@ def main() -> None:
         draw.text((lx + 62, yy), label, fill=(0, 0, 0), font=font, anchor="lm")
         lx += 62 + int(draw.textlength(label, font=font)) + 40
 
-    canvas.save(OUT_PNG)
-    n_route = len(routed.points)
-    print(f"yazildi: {OUT_PNG}  (rota waypoint: {n_route}, "
-          f"gorev noktasi: {len(plan.points)})")
+    canvas.save(out_png)
+    print(f"yazildi: {out_png}  (cizilen waypoint: {len(route_pts)}, "
+          f"tam rota: {len(routed.points)}, baslangic node: {start_idx + 1})")
 
 
 if __name__ == "__main__":

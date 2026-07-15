@@ -10,6 +10,27 @@ from typing import Any, Iterable, Optional
 
 from deos_algorithms.geo_utils import EARTH_RADIUS_M, haversine_m
 
+# U dönüşü caydırma: rota araması, gidiş yönünü kısa mesafede ~180° tersine
+# çeviren SIKI dönüşlere büyük ek maliyet biçer. Böylece U dönüşü ancak başka
+# hiçbir yol yokken (veya alternatifler bu cezadan daha pahalıyken) seçilir.
+# Uzun mesafeye yayılan yön değişimi (ör. döner kavşak yayı) meşrudur, cezalanmaz.
+U_TURN_ANGLE_DEG = 150.0
+U_TURN_PENALTY_COST = 300.0  # cost birimi cinsinden (tipik: metre)
+_U_TURN_WINDOW_M = 8.0  # referans yönden sapma bu mesafeden kısa sürerken 150°'ye ulaşırsa U sayılır
+_U_TURN_STRAIGHT_DEV_DEG = 30.0  # bu sapmanın altı "hâlâ düz gidiyor" sayılır (referans korunur)
+
+
+def _bearing_deg(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dl = math.radians(lon2 - lon1)
+    y = math.sin(dl) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def _angle_diff_deg(a: float, b: float) -> float:
+    return ((a - b + 180.0) % 360.0) - 180.0
+
 
 @dataclass(frozen=True)
 class Node:
@@ -295,26 +316,42 @@ def dijkstra(
     goal: int,
     blocked_edges: Optional[set[tuple[int, int]]] = None,
     edge_cost_multiplier: Optional[Callable[[Edge], float]] = None,
+    u_turn_penalty: float = U_TURN_PENALTY_COST,
 ) -> list[int]:
     """
-    Basit Dijkstra (pozitif edge cost varsayılır). Çıktı: node id path (start..goal).
+    Yön-farkındalıklı Dijkstra (pozitif edge cost varsayılır). Çıktı: node id path (start..goal).
 
     edge_cost_multiplier: Kenar maliyetini çarpan ile ölçekler (ör. tünel segmentlerini ucuzlatmak için).
+    u_turn_penalty: Referans gidiş yönünden sapma _U_TURN_WINDOW_M'den kısa yol
+      içinde U_TURN_ANGLE_DEG'e ulaşırsa (sıkı geri dönüş) eklenen maliyet.
+      Çift yönlü yolun 3-4 m'lik dönüş cebi yakalanır; döner kavşak yayı gibi
+      geniş dönüşler pencereyi aştığından cezalanmaz. 0 => kapalı.
     """
     if start == goal:
         return [start]
 
-    dist: dict[int, float] = {start: 0.0}
-    prev: dict[int, int] = {}
-    pq: list[tuple[float, int]] = [(0.0, start)]
-    seen: set[int] = set()
+    by_id = {n.id: n for n in g.nodes}
+
+    # Durum: (düğüm, referans gidiş yönü [tam derece] | None, referanstan sapma
+    # başladığından beri katedilen yol [dm, üstten sınırlı]). Aynı düğüme farklı
+    # yönlerden gelmek farklı maliyet taşıyabildiğinden arama durum uzayında yapılır.
+    win_dm = int(round(_U_TURN_WINDOW_M * 10.0))
+    start_state: tuple[int, Optional[int], int] = (int(start), None, 0)
+    dist: dict[tuple[int, Optional[int], int], float] = {start_state: 0.0}
+    prev: dict[tuple[int, Optional[int], int], tuple[int, Optional[int], int]] = {}
+    tie = 0
+    pq: list[tuple[float, int, int, Optional[int], int]] = [(0.0, tie, int(start), None, 0)]
+    seen: set[tuple[int, Optional[int], int]] = set()
+    goal_state: Optional[tuple[int, Optional[int], int]] = None
 
     while pq:
-        d, u = heapq.heappop(pq)
-        if u in seen:
+        d, _, u, ref_b, acc = heapq.heappop(pq)
+        state = (u, ref_b, acc)
+        if state in seen:
             continue
-        seen.add(u)
-        if u == goal:
+        seen.add(state)
+        if u == int(goal):
+            goal_state = state
             break
         for e in g.adj.get(u, []):
             if blocked_edges is not None and (int(e.u), int(e.v)) in blocked_edges:
@@ -322,20 +359,46 @@ def dijkstra(
             mult = 1.0 if edge_cost_multiplier is None else float(edge_cost_multiplier(e))
             if mult < 1e-9:
                 mult = 1e-9
-            nd = d + float(e.cost) * mult
-            if nd < dist.get(e.v, float("inf")):
-                dist[e.v] = nd
-                prev[e.v] = u
-                heapq.heappush(pq, (nd, e.v))
+            penalty = 0.0
+            new_ref = ref_b
+            new_acc = acc
+            n0 = by_id.get(int(e.u))
+            n1 = by_id.get(int(e.v))
+            if n0 is not None and n1 is not None:
+                b = _bearing_deg(n0.lat, n0.lon, n1.lat, n1.lon)
+                b_key = int(round(b)) % 360
+                seg_dm = int(round(haversine_m(n0.lat, n0.lon, n1.lat, n1.lon) * 10.0))
+                if ref_b is None:
+                    new_ref, new_acc = b_key, 0
+                else:
+                    dev = abs(_angle_diff_deg(b, float(ref_b)))
+                    if dev >= U_TURN_ANGLE_DEG:
+                        # Sapma penceresi içinde tersine dönüş tamamlandı => U dönüşü
+                        if u_turn_penalty > 0.0 and acc < win_dm:
+                            penalty = float(u_turn_penalty)
+                        new_ref, new_acc = b_key, 0
+                    elif dev <= _U_TURN_STRAIGHT_DEV_DEG:
+                        new_ref, new_acc = ref_b, 0  # hâlâ düz: sapma sayacı sıfır
+                    elif acc + seg_dm >= win_dm:
+                        new_ref, new_acc = b_key, 0  # geniş dönüş: referansı tazele
+                    else:
+                        new_acc = acc + seg_dm
+            nd = d + float(e.cost) * mult + penalty
+            ns = (int(e.v), new_ref, new_acc)
+            if nd < dist.get(ns, float("inf")):
+                dist[ns] = nd
+                prev[ns] = state
+                tie += 1
+                heapq.heappush(pq, (nd, tie, int(e.v), new_ref, new_acc))
 
-    if goal not in dist:
+    if goal_state is None:
         return []
 
-    path: list[int] = [goal]
-    cur = goal
-    while cur != start:
+    path: list[int] = [int(goal_state[0])]
+    cur = goal_state
+    while cur != start_state:
         cur = prev[cur]
-        path.append(cur)
+        path.append(int(cur[0]))
     path.reverse()
     return path
 

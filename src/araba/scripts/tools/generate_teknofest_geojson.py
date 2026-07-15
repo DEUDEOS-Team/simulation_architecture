@@ -2,10 +2,8 @@
 """
 generate_teknofest_geojson.py — sim dünyası için görev + centerline GeoJSON üretici.
 
-2026-07-08: ÇİFT ŞERİT ŞEMASINA geçirildi (kullanıcı kararı). Harita ve
-koordinatlar aynı kaldı (map.jpeg / benim_dunyam.sdf); değişen yalnızca yol
-ağının İŞARETLENME biçimi — artık arkadaşın gerçek saha çizimiyle (map.geojson)
-aynı şemadadır:
+Çift şerit şeması kullanır. Harita ve koordinatlar map.jpeg / benim_dunyam.sdf ile
+aynı; yol ağının işaretlenme biçimi gerçek saha çizimiyle (map.geojson) aynı şemadadır:
   - Her yolun gidiş ve gelişi AYRI birer LineString'dir (`oneway: true`).
     Şerit eksenleri yol ekseninin ±OFF yanındadır (map.jpeg'deki kesikli
     ayırıcının iki yanı) ve yönler SAĞDAN trafiğe göre atanır:
@@ -20,9 +18,8 @@ aynı şemadadır:
   - Park bölgesi yolları (erişim + koridor) tek çizgi çift yön kalır
     (arkadaşın haritasındaki ikizsiz yollar gibi).
 
-Kaynak geometri: benim_dunyam.sdf'teki 'resimli_kutu' (map.jpeg, 97×120 m)
-üzerinden 2026-07-06'da kalibre edilen yol ızgarası (dünya nesne pozlarıyla
-doğrulandı).
+Kaynak geometri: benim_dunyam.sdf'teki 'resimli_kutu' (map.jpeg, 97×120 m) üzerinden
+kalibre edilen yol ızgarası (dünya nesne pozlarıyla doğrulandı).
 
 Çıktılar (missions/ dizinine):
   teknofest_centerlines.geojson — şerit LineString'leri (route_graph girdisi)

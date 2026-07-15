@@ -16,8 +16,18 @@ import numpy as np
 # SABITLER
 # ============================================================
 
-CORRIDOR_HALF_WIDTH_M = 1.2
+# lidar_obstacle_node engelleri zaten yol + şerit maskesinden geçirip "yolda" diye
+# onayladıktan sonra ±3.0 m koridorla yayınlıyor. Araç şeridinde ~1-1.5 m yanal kayınca
+# yoldaki koni araca göre 2-3 m'ye düşüyor; dar bir koridor bu yol-onaylı engelleri ikinci
+# kez "yol dışı" sayıp eliyor (koniler görülüyor ama Engel: clear). Lidar node'unun
+# koridoruyla eşitlendi — asıl filtre yol/şerit kapısı.
+CORRIDOR_HALF_WIDTH_M = 3.0
 CORRIDOR_LOOKAHEAD_M = 20.0
+
+# Çarpışma koridoru (acil fren için): araç yarı genişliği (0.6) + pay. Koridor (±3 m)
+# "dikkate al" bandı; bu ise "çarpacağız" bandı. İkisi ayrı olmalı, yoksa engelin yanından
+# geçerken acil fren aracı kaçınmanın ortasında dondurur.
+COLLISION_HALF_WIDTH_M = 1.0
 
 DIST_EMERGENCY_STOP = 3.0
 DIST_HARD_SLOWDOWN = 8.0
@@ -324,7 +334,14 @@ class SafetyLogic:
         det = closest.detection
         eff = closest.effective_distance_m
 
-        if eff < DIST_EMERGENCY_STOP:
+        # Acil fren yalnız çarpışma koridorunda. Koridor (±3 m) bir "dikkate al" bandıdır
+        # — hız kısıtı/kaçınma için doğru genişlik. Ama araç engelin yanından geçerken
+        # (lateral ~1.5 m, mesafe <3 m) o engel hâlâ koridorun içindedir; acili buna
+        # bağlarsak araç tam kaçınma sırasında donup manevrayı bitiremez. Acil = gerçekten
+        # çarpacaksak.
+        in_collision_path = abs(closest.lateral_m) <= COLLISION_HALF_WIDTH_M
+
+        if eff < DIST_EMERGENCY_STOP and in_collision_path:
             return SafetyDecision(
                 emergency_stop=True,
                 speed_cap_ratio=0.0,

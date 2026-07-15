@@ -40,3 +40,15 @@ __pycache__/
 *.mcap
 *.npy
 rosbag2_*/
+
+# ── Simülasyon rapor kayıtları (koşu başına üretilir; istenirse elle paylaşılır) ──
+/rapor/
+
+# ── Ekran kayıtları / videolar (büyük, kod değil) ──
+*.mp4
+
+# ── Kopyalanan ROS log arşivleri (koşu başına, ~MB'lar) ──
+/kayit_loglari_*/
+
+# ── Yerel çalışma/koşu notları (paylaşılmaz) ──
+/src/araba/scripts/KOSU_PLANI.md

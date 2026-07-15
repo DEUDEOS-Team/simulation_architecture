@@ -54,7 +54,6 @@ from traffic_sign_logic import (
 )
 from parking_logic import ParkingLogic, ParkState
 from safety_logic import CORRIDOR_HALF_WIDTH_M
-from slalom_logic import SlalomLogic, SlalomState
 from decision_arbiter import Candidate, DecisionArbiter, ReasonCode
 
 # ─── AYARLAR ─────────────────────────────────────────────────
@@ -65,6 +64,17 @@ CAMERA_HEIGHT    = 320     # kamera önizleme yüksekliği
 # Slalom/kaçınma direksiyonu ancak engel bu mesafeye girince devreye girer
 # (daha uzaktaki engel için erken weave başlatma — hız tavanı zaten yavaşlatır)
 SLALOM_ENGAGE_DISTANCE_M = 8.0
+
+# Trafik ışığı mesafesi: LiDAR "direk adayı" kümeleri (lidar_obstacle_node
+# /perception/pole_candidates) kamera ışık bbox'ının bakış yönüne projeksiyon ile
+# eşleştirilir; eşleşen direğin LiDAR mesafesi kullanılır. Stereo mesafe varsa
+# dokunulmaz; eşleşme yoksa traffic_light_logic'in bbox-yükseklik yedeği devrededir.
+POLE_CAM_FX_PX = 917.4        # kamera odak (1280x720, parking_logic ile aynı)
+POLE_CAM_CX_PX = 640.0
+POLE_CAM_X_OFF_M = 1.2724     # ön tampon -> kamera geri ofseti (URDF)
+POLE_MATCH_MAX_PX = 40.0      # bbox merkezi ile direk projeksiyonu arası tolerans
+POLE_MATCH_MAX_DIST_M = 25.0  # bu mesafeden uzak direk eşleşmesi kullanılmaz
+
 
 # Kamera node'undaki sınıf ID → isim eşlemesi (parse için gerekli)
 CLASS_NAMES = {
@@ -588,6 +598,10 @@ class PerceptionPipelineNode(Node):
         # ── Parametreler ──
         self.declare_parameter('show_dashboard', True)
         self._show_dashboard = self.get_parameter('show_dashboard').get_parameter_value().bool_value
+        # Slalom direksiyon adayı anahtarı: engel-geçme testlerinde slalom weave'i
+        # karışabildiğinden kapatılabilir olsun; slalom parkuru çalışılırken launch'tan açılır.
+        self.declare_parameter('enable_slalom', True)
+        self._enable_slalom = bool(self.get_parameter('enable_slalom').value)
 
         # ── cv_bridge ──
         self._bridge = CvBridge()
@@ -597,14 +611,12 @@ class PerceptionPipelineNode(Node):
         self._traffic_sign_logic = TrafficSignLogic()
         self._obstacle_logic = ObstacleLogic()
         self._parking_logic = ParkingLogic()
-        self._slalom_logic = SlalomLogic()
         self._decision_arbiter = DecisionArbiter()
 
         # ── Son bilinen durumlar ──
         self._last_light_state: TrafficLightState | None = None
         self._last_sign_state: TrafficSignState | None = None
         self._last_obstacle_state: ObstacleState | None = None
-        self._last_slalom_state: SlalomState | None = None
         self._last_park_state: ParkState | None = None
         self._park_mode: bool = False
         self._last_perception_frame: PerceptionFrame | None = None
@@ -614,6 +626,9 @@ class PerceptionPipelineNode(Node):
         self._lidar: list[LidarObstacle] = []
         self._lidar_stamp: float = 0.0
         self.LIDAR_TIMEOUT_S = 1.0   # bu süreden eski lidar verisi kullanılmaz
+        # LiDAR direk adayları (trafik ışığı mesafe eşleştirmesi için)
+        self._poles: list[dict] = []
+        self._poles_stamp: float = 0.0
         self._last_detection_time: float | None = None
         self._detection_count: int = 0
         self._frame_count: int = 0
@@ -624,8 +639,13 @@ class PerceptionPipelineNode(Node):
         self._sub_dets = self.create_subscription(
             Float32MultiArray, '/perception/detections', self._detections_callback, 10)
 
-        self._sub_camera = self.create_subscription(
-            Image, '/camera/image', self._camera_callback, 10)
+        # Kamera karesi yalnız dashboard içindir. Dashboard kapalıyken abone olma:
+        # her kare 1280x720 kopyalanıp cv_bridge'den geçiyor ve WSLg'de bu yük şerit
+        # takip penceresini donduruyor.
+        self._sub_camera = None
+        if self._show_dashboard:
+            self._sub_camera = self.create_subscription(
+                Image, '/camera/image', self._camera_callback, 10)
 
         self._sub_imu = self.create_subscription(
             Imu, '/imu/data', self._imu_callback, 10)
@@ -636,9 +656,17 @@ class PerceptionPipelineNode(Node):
         self._sub_lidar = self.create_subscription(
             String, '/perception/lidar_obstacles', self._lidar_callback, 10)
 
+        self._sub_poles = self.create_subscription(
+            String, '/perception/pole_candidates', self._poles_callback, 10)
+
         # Planning → Perception: park arama/manevra modu (mimari planning_park_mode)
         self._sub_park_mode = self.create_subscription(
             Bool, '/planning/park_mode', self._park_mode_callback, 10)
+
+        # Planning → Perception: kısıtın bağlandığı kavşak geçildi — tabela dönüş
+        # kısıtlarını temizle (yoksa kısıt yapışkan kalıp sonraki kavşakları da bloklar)
+        self._sub_intersection_passed = self.create_subscription(
+            Bool, '/planning/intersection_passed', self._intersection_passed_callback, 10)
 
         # ── ROS Yayıncılar ──
         self._pub_light = self.create_publisher(
@@ -690,6 +718,9 @@ class PerceptionPipelineNode(Node):
         frame = fuse(stereo=stereo_bboxes, lidar=lidar, imu=imu_sample)
         self._last_perception_frame = frame
 
+        # Işık mesafesi: bbox'ın bakış yönüne düşen LiDAR direğinden (stereo yoksa)
+        self._assign_light_distances_from_poles(frame.light_dets)
+
         self._last_light_state = self._traffic_light_logic.update(
             frame.light_dets, now=now, vehicle_speed_mps=self._vehicle_speed_mps)
 
@@ -701,21 +732,9 @@ class PerceptionPipelineNode(Node):
         self._last_obstacle_state = self._obstacle_logic.update(
             frame.obstacle_dets + frame.lidar_obstacle_dets)
 
-        # Slalom/statik kaçınma direksiyonu: SADECE lidar engelleri beslenir —
-        # koridor filtreli ve gerçek mesafe/lateral taşırlar. Kamera bbox'ları
-        # mesafesizdir; uzaktaki bir koni sahte slalom başlatabilirdi.
-        # Lateral kapısı SafetyLogic koridoruyla aynı (±1.2 m): lidar node'un
-        # ±3 m koridoru yol KENARINDAKİ levha/durak direklerini de içeriyor —
-        # onlar "cone" sınıflanıp sahte slalom tetikledi (canlı koşu 2026-07-11:
-        # araç durak civarında sebepsiz karşı şeride süzüldü).
-        slalom_dets = [
-            d for d in frame.lidar_obstacle_dets
-            if (d.estimated_distance_m is None
-                or float(d.estimated_distance_m) <= SLALOM_ENGAGE_DISTANCE_M)
-            and (d.estimated_lateral_m is None
-                 or abs(float(d.estimated_lateral_m)) <= CORRIDOR_HALF_WIDTH_M)
-        ]
-        self._last_slalom_state = self._slalom_logic.update(slalom_dets)
+        # Birleşik kaçınma direksiyonu (_compute_avoid_steer) doğrudan lidar
+        # engel listesini kullanır; ayrı slalom besleme adımı KALDIRILDI —
+        # tek durum makinesi (avoid→return) her statik grubu aynı işler.
 
         # Park mantığı sadece park modunda ilerletilir (mimariden sapma: fusion node
         # her tick günceller, ama mission_manager.notify_park_completed yapışkan —
@@ -733,6 +752,45 @@ class PerceptionPipelineNode(Node):
             self._parking_logic = ParkingLogic()
             self._last_park_state = None
         self._park_mode = new_mode
+
+    def _poles_callback(self, msg: String) -> None:
+        try:
+            self._poles = [p for p in json.loads(msg.data) if isinstance(p, dict)]
+            self._poles_stamp = time.monotonic()
+        except Exception:
+            self._poles = []
+
+    def _assign_light_distances_from_poles(self, light_dets: list) -> None:
+        """Trafik ışığı tespitlerine LiDAR direk mesafesi ata: direk adayı,
+        ön tampon çerçevesinden kamera pikseline projekte edilir (u = cx - fx·y/x)
+        ve ışık bbox merkezine en yakın düşen aday (tolerans içinde) kullanılır."""
+        if not light_dets or not self._poles:
+            return
+        if (time.monotonic() - self._poles_stamp) > self.LIDAR_TIMEOUT_S:
+            return
+        for det in light_dets:
+            if det.estimated_distance_m is not None or not det.bbox_px:
+                continue
+            u_det = 0.5 * (float(det.bbox_px[0]) + float(det.bbox_px[2]))
+            best_d = None
+            best_du = POLE_MATCH_MAX_PX
+            for p in self._poles:
+                d = float(p.get("distance_m", -1.0))
+                if d <= 0.5 or d > POLE_MATCH_MAX_DIST_M:
+                    continue
+                x_c = d + POLE_CAM_X_OFF_M
+                u_pred = POLE_CAM_CX_PX - POLE_CAM_FX_PX * float(p.get("lateral_m", 0.0)) / x_c
+                du = abs(u_pred - u_det)
+                if du < best_du:
+                    best_du = du
+                    best_d = d
+            if best_d is not None:
+                det.estimated_distance_m = best_d
+
+    def _intersection_passed_callback(self, msg: Bool) -> None:
+        if bool(msg.data):
+            self._traffic_sign_logic.notify_intersection_passed()
+            self.get_logger().info('Kavşak geçildi: tabela dönüş kısıtları temizlendi')
 
     def _lidar_callback(self, msg: String) -> None:
         """lidar_obstacle_node'un JSON çıktısını LidarObstacle listesine çevirir
@@ -890,29 +948,18 @@ class PerceptionPipelineNode(Node):
                 candidates.append(Candidate(name="sign", emergency_stop=False,
                                             speed_cap=float(ss.speed_cap_ratio),
                                             reasons=[ReasonCode.SIGN_SPEED_CAP]))
-        sl = self._last_slalom_state
-        slalom_steering = bool(sl is not None and sl.aktif)
+        # Engel: yalnız emniyet (acil fren + hız kısıtı). Kaçınma direksiyonu bu node'da
+        # değil; ayrı bir düğümde ham lidar + şerit-ofset yaklaşımıyla üretilir.
         if os_ is not None:
             if os_.emergency_stop:
                 candidates.append(Candidate(name="obstacle", emergency_stop=True, speed_cap=0.0,
                                             reasons=[ReasonCode.OBSTACLE_EMERGENCY_STOP]))
-            # road_blocked (koridorda 2+ bariyer) slalom manevrası SÜRERKEN estop'a
-            # çevrilmez: slalom parkuru tam da böyle görünür; gerçek duvar durumunda
-            # emniyet, yukarıdaki emergency_stop bandından (≤1.5 m) yine gelir.
-            if os_.road_blocked and not slalom_steering:
+            if os_.road_blocked:
                 candidates.append(Candidate(name="obstacle", emergency_stop=True, speed_cap=0.0,
                                             reasons=[ReasonCode.ROAD_BLOCKED]))
             if float(os_.speed_cap_ratio) < 1.0:
-                reasons = [ReasonCode.STATIC_AVOID] if os_.suggest_lane_change else []
                 candidates.append(Candidate(name="obstacle", emergency_stop=False,
-                                            speed_cap=float(os_.speed_cap_ratio), reasons=reasons))
-        if slalom_steering:
-            # Slalom steer_override'ı: arbiter lane=None'da static/dynamic_avoid'u
-            # iptal eder ama slalom'u etmez — OVERRIDE modu vehicle_controller'da hazır.
-            candidates.append(Candidate(name="slalom", emergency_stop=False,
-                                        speed_cap=float(sl.hiz_katsayisi),
-                                        steer_override=float(sl.steering),
-                                        reasons=[ReasonCode.SLALOM]))
+                                            speed_cap=float(os_.speed_cap_ratio), reasons=[]))
         if self._park_mode and ps is not None and not ps.complete:
             reasons = [ReasonCode.PARK_MODE]
             if bool(ps.no_eligible_spot):
@@ -921,8 +968,11 @@ class PerceptionPipelineNode(Node):
                                         speed_cap=float(ps.speed_ratio),
                                         steer_override=float(ps.steering), reasons=reasons))
 
-        # Simde lane_walls pointcloud'u yok → lane=None (avoidance steer zaten üretilmiyor)
-        decision = self._decision_arbiter.arbitrate(candidates=candidates, lane=None)
+        # Simde lane_walls pointcloud'u yok → lane=None. static_avoid steer'i lidar
+        # geometrisinden geldiğinden (nişan-noktası) lane şartı aranmaz; şerit
+        # sınırı bilgisi olan mimari kurulumda True kalmalı (madde 12/20 notu).
+        decision = self._decision_arbiter.arbitrate(
+            candidates=candidates, lane=None, lane_required_for_avoidance=False)
 
         detections_fresh = (self._last_detection_time is not None
                             and (time.time() - self._last_detection_time) < 1.0)
@@ -963,7 +1013,12 @@ class PerceptionPipelineNode(Node):
         if self._detection_count > 0:
             parts.append(f"Tespit: {self._detection_count}")
         if self._last_light_state and self._last_light_state.active_color:
-            parts.append(f"Isik: {self._last_light_state.active_color}")
+            _ls = self._last_light_state
+            # Teşhis: ışık mesafe kestirimi kritik — commit bandı (6.5 m) tetikleniyor mu,
+            # yoksa mesafe hep bandın üstünde mi görünüyor?
+            _d = f"{_ls.last_distance_m:.1f}m" if _ls.last_distance_m is not None else "?"
+            parts.append(f"Isik: {_ls.active_color} d={_d} stop={_ls.must_stop} "
+                         f"cap={_ls.speed_cap_ratio:.2f}")
         if self._last_sign_state and self._last_sign_state.active_signs:
             parts.append(f"Tabela: {len(self._last_sign_state.active_signs)} adet")
         if self._last_obstacle_state:

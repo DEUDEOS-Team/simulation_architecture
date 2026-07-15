@@ -69,6 +69,7 @@ install(PROGRAMS
   scripts/lane_yolo_node.py
   scripts/autonomous_control_node.py
   scripts/lidar_obstacle_node.py
+  scripts/avoidance_node.py
   scripts/final_odom_node.py
   scripts/mission_planning_node.py
   scripts/vehicle_controller_node.py
@@ -81,6 +82,7 @@ install(PROGRAMS
   scripts/ros_topic_layout.py
   scripts/safety_logic.py
   scripts/obstacle_logic.py
+  scripts/gap_avoid_logic.py
   scripts/traffic_light_logic.py
   scripts/traffic_sign_logic.py
   scripts/parking_logic.py

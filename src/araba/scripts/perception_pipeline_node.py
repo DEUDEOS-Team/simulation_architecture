@@ -719,7 +719,7 @@ class PerceptionPipelineNode(Node):
         self._last_perception_frame = frame
 
         # Işık mesafesi: bbox'ın bakış yönüne düşen LiDAR direğinden (stereo yoksa)
-        self._assign_light_distances_from_poles(frame.light_dets)
+        self._assign_distances_from_poles(frame.light_dets)
 
         self._last_light_state = self._traffic_light_logic.update(
             frame.light_dets, now=now, vehicle_speed_mps=self._vehicle_speed_mps)
@@ -740,6 +740,10 @@ class PerceptionPipelineNode(Node):
         # her tick günceller, ama mission_manager.notify_park_completed yapışkan —
         # görevden önce gelen yanlış bir complete=True park beklemesini iptal eder).
         if self._park_mode:
+            # Park tabelasına da LiDAR direk mesafesini ata: bbox kestirimi pole üstü
+            # tabelada güvenilmez (None dönüp parking_logic'i anında "tamamlandı"ya
+            # düşürüp aracı levhaya sürüyordu).
+            self._assign_distances_from_poles(frame.sign_dets)
             park_dets = parking_detections_from_signs(frame.sign_dets)
             self._last_park_state = self._parking_logic.update(park_dets)
 
@@ -760,15 +764,18 @@ class PerceptionPipelineNode(Node):
         except Exception:
             self._poles = []
 
-    def _assign_light_distances_from_poles(self, light_dets: list) -> None:
-        """Trafik ışığı tespitlerine LiDAR direk mesafesi ata: direk adayı,
-        ön tampon çerçevesinden kamera pikseline projekte edilir (u = cx - fx·y/x)
-        ve ışık bbox merkezine en yakın düşen aday (tolerans içinde) kullanılır."""
-        if not light_dets or not self._poles:
+    def _assign_distances_from_poles(self, dets: list) -> None:
+        """Direk üstü tespitlere (ışık, park/durak tabelası) LiDAR direk mesafesi ata:
+        direk adayı ön tampon çerçevesinden kamera pikseline projekte edilir
+        (u = cx - fx·y/x) ve bbox merkezine en yakın düşen aday (tolerans içinde)
+        kullanılır. Mesafesi zaten dolu olanlar atlanır. Park tabelası pole üstünde
+        olduğundan bbox-tabanlı kestirim güvenilmez (çoğu kez None); lidar direği
+        gerçek mesafeyi verir."""
+        if not dets or not self._poles:
             return
         if (time.monotonic() - self._poles_stamp) > self.LIDAR_TIMEOUT_S:
             return
-        for det in light_dets:
+        for det in dets:
             if det.estimated_distance_m is not None or not det.bbox_px:
                 continue
             u_det = 0.5 * (float(det.bbox_px[0]) + float(det.bbox_px[2]))

@@ -80,6 +80,12 @@ class VehicleControllerNode(Node):
         # görünse bile PLAN referansı sürer (aksi hâlde LANE kavşaktan düz geçirir)
         self.declare_parameter("turn_active_topic", "/planning/turn_active")
         self.declare_parameter("turn_active_timeout_s", 1.0)
+        # Durak cebi manevrası: mission_planning maneuver_active yayınlarken PLAN
+        # referansı (steer + hız) şeridi EZER ve hız 0 iken TAM DURUR (TURN modu hız
+        # 0'da şeride düşerdi; durakta beklerken araç kaymamalı). Öncelik: OVERRIDE >
+        # MANEUVER > TURN > LANE > PLAN > STOP.
+        self.declare_parameter("maneuver_active_topic", "/planning/maneuver_active")
+        self.declare_parameter("maneuver_active_timeout_s", 1.0)
 
         self._wheel_base = float(self.get_parameter("wheel_base").value)
         self._steer_limit = float(self.get_parameter("steer_limit").value)
@@ -98,7 +104,9 @@ class VehicleControllerNode(Node):
         self._fusion_stamp = 0.0
         self._turn_active = False
         self._turn_stamp = 0.0
-        self._mode = ""                      # log için: LANE / PLAN / TURN / OVERRIDE / STOP
+        self._maneuver_active = False
+        self._maneuver_stamp = 0.0
+        self._mode = ""                      # log için: LANE / PLAN / TURN / MANEUVER / OVERRIDE / STOP
         # Engelden kaçınma direksiyon düzeltmesi (avoidance_node, oran + = SAĞA).
         # Moddan bağımsız: LANE/PLAN/TURN hangisi sürüyorsa onun üstüne eklenir. Kaçınmayı
         # yalnız /cmd_vel_lane üzerinden uygularsak, engelin olduğu yerde şerit segmentasyonu
@@ -118,6 +126,8 @@ class VehicleControllerNode(Node):
         self.create_subscription(String, "/perception/decision_debug", self._decision_cb, 10)
         self.create_subscription(
             Bool, str(self.get_parameter("turn_active_topic").value), self._turn_active_cb, 10)
+        self.create_subscription(
+            Bool, str(self.get_parameter("maneuver_active_topic").value), self._maneuver_active_cb, 10)
 
         self._pub_cmd = self.create_publisher(
             Twist, str(self.get_parameter("cmd_out_topic").value), 10)
@@ -148,6 +158,10 @@ class VehicleControllerNode(Node):
     def _turn_active_cb(self, msg: Bool) -> None:
         self._turn_active = bool(msg.data)
         self._turn_stamp = time.monotonic()
+
+    def _maneuver_active_cb(self, msg: Bool) -> None:
+        self._maneuver_active = bool(msg.data)
+        self._maneuver_stamp = time.monotonic()
 
     def _decision_cb(self, msg: String) -> None:
         try:
@@ -196,6 +210,10 @@ class VehicleControllerNode(Node):
             self._turn_active
             and (now - self._turn_stamp) < float(self.get_parameter("turn_active_timeout_s").value)
         )
+        maneuver_ok = (
+            self._maneuver_active
+            and (now - self._maneuver_stamp) < float(self.get_parameter("maneuver_active_timeout_s").value)
+        )
         plan_speed_mps = self._plan_speed * self._max_speed if plan_ok else self._max_speed
 
         if ovr_ok:
@@ -203,6 +221,11 @@ class VehicleControllerNode(Node):
             v = min(self._ovr_speed_cap * self._max_speed, plan_speed_mps)
             cmd = self._ratio_to_twist(self._ovr_steer, v)
             mode = "OVERRIDE"
+        elif maneuver_ok and plan_ok:
+            # Durak cebi manevrası: planning steer + hızı doğrudan sürer, şeridi ezer.
+            # plan_speed 0 ise plan_speed_mps 0 → _ratio_to_twist tam durdurur (cepte bekleme).
+            cmd = self._ratio_to_twist(self._plan_steer, plan_speed_mps)
+            mode = "MANEUVER"
         elif turn_ok and plan_ok and plan_speed_mps > 1e-3:
             # Kavşak dönüşü: rota belirgin yön değişimi istiyor — şerit görünse
             # bile planning steering_ref sürer, dönüş bitince LANE'e dönülür

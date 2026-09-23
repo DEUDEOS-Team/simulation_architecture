@@ -69,7 +69,7 @@ TURN_LATE_MAX_GAIN = 1.8         # kazanç tavanı
 # uzun süren kırış duvara sürtüyor), ama aynı erken bitirmeyi sola uygularsak 90°'lik sol
 # dönüş yarıda kalıyor. Sağda erken bırak, solda yayın sonuna kadar dön.
 TURN_EXIT_ALIGN_DEG = 25.0       # SOL (ve varsayılan): tam dönsün
-TURN_EXIT_ALIGN_DEG_RIGHT = 50.0 # SAĞ: erken bırak (tünel)
+TURN_EXIT_ALIGN_DEG_RIGHT = 62.0 # SAĞ: erken bırak (tünel girişinde duvara sürtmesin)
 
 # Kavşak dönüş yayı: köşe waypoint'ine kilitlenmek yerine giriş/çıkış bacaklarına teğet
 # bir daire yayı çizip onu izliyoruz. Köşeye nişan almak, hedef tam önde olduğundan köşe
@@ -81,7 +81,7 @@ TURN_ARC_POST_M = 8.0            # yay sonrası düz koşu (çıkışta lookahea
 # Sağ dönüşte yay, çıkış teğetine bu kadar kala bırakılır: son metrelerde direksiyon
 # zaten açılıyor, kalan hizalanmayı şerit takibi toparlar. Solda 0 (yay sonuna kadar dön).
 TURN_ARC_RELEASE_LEAD_M = 0.0        # SOL / varsayılan
-TURN_ARC_RELEASE_LEAD_RIGHT_M = 1.5  # SAĞ (tünel dönüşü)
+TURN_ARC_RELEASE_LEAD_RIGHT_M = 3.0  # SAĞ (tünel dönüşü: yayı daha erken bırak)
 
 # Döner kavşak izinin yarıçapı. Haritanın merkez çizgisi düğümleri halkanın iç kenarına
 # (r≈6.5-7.1 m) yapışık; araç yarı genişliği 0.8 m olunca iç tekerlek orta adaya ~0.4 m
@@ -97,6 +97,26 @@ TURN_ARC_MAX_OUT_SWING_M = 0.65
 EARTH_R_M = 6371000.0
 WHEELBASE_M = 1.675              # araç dingil mesafesi (URDF)
 MAX_STEER_RAD = 0.5236           # tam kilit tekerlek açısı (vehicle_controller ile aynı)
+
+# Durak cebi manevrası. Cepler durak levhasından hemen sonra hep SAĞA kıvrılan çizili
+# (fiziksel değil) ceplerdir: araç sağa yanaşır, kısa süre bekler, geri şeride çıkar.
+# Yön-tabanlı bir S manevrası (giriş: sağa kır, düzel; bekle; çıkış: sola kır, düzel).
+# Zamanlama yerine yön farkı eşiklerine bakıldığından RTF'ten bağımsız çalışır.
+# maneuver_active + steering_ref + speed_limit ile vehicle_controller MANEUVER modunu sürer.
+DURAK_TURN_DEG = 42.0            # girişte girilen yön farkı (cebin yanal derinliği)
+DURAK_ALIGN_TOL_DEG = 6.0       # "düzeldi" toleransı (giriş yönüne dönüş)
+# Çıkışta araç sola bu kadar dönünce (burnu şeride kırılınca) manevra bırakılır;
+# son hizalanmayı şerit takibi yapar. Simetrik S'in "sağa kırıp düzel" fazı aracı
+# sağa savurup şeritten çıkarıyordu — o faz kaldırıldı.
+DURAK_EXIT_TURN_DEG = 22.0
+DURAK_STEER = 0.72             # manevra direksiyon oranı (+ = SAĞA)
+DURAK_CRAWL_RATIO = 0.35       # manevra sürünme hız oranı (0..1)
+DURAK_HOLD_S = 3.0             # cepte bekleme (duvar saati; izleyicinin gördüğü süre)
+# Manevra, durak levhasının (waypoint) EN YAKIN geçildiği andan bu kadar sonra başlar.
+# arrival_radius (3 m) manevrayı levhadan önce tetikliyordu; levhayı ~1.5 m geçtikten
+# sonra cebe girsin diye en yakın yaklaşım mesafesine göre kapı. Varış yarıçapından ve
+# şeridin levhaya yanal uzaklığından bağımsızdır.
+DURAK_PAST_M = 1.5
 
 # Rotadan sapma bekçisi: aktif hedefe mesafe, o hedef için görülen minimumdan bu kadar
 # artarsa dönüş kaçırılmış demektir -> mevcut konumdan rota yeniden planlanır.
@@ -175,6 +195,7 @@ class MissionPlanningNode(Node):
         self.declare_parameter("planning_turn_active_topic", "/planning/turn_active")
         # SİM EKİ: kısıtın bağlandığı kavşak geçildi → perception tabela kısıtlarını temizlesin
         self.declare_parameter("planning_intersection_passed_topic", "/planning/intersection_passed")
+        self.declare_parameter("planning_maneuver_active_topic", "/planning/maneuver_active")
 
         mission_file = str(self.get_parameter("mission_file").value)
         centerlines_file = str(self.get_parameter("centerlines_file").value)
@@ -264,7 +285,11 @@ class MissionPlanningNode(Node):
         self._turn_arc_s_here: float = 0.0             # aracın yay üzerindeki son ilerlemesi
         self._turn_engage_dist: float | None = None    # dönüş tetiklendiğindeki wp mesafesi
         self._turn_is_right: bool = False              # dönüş yönü: sağ mı? (çıkış eşiği yöne göre)
-        self._curve_skip_logged_idx: int = -1  # viraj-atlandı logu wp başına bir kez
+        # Viraj (kavşak değil): yay yine kurulur ama vehicle_controller'a turn_active=False
+        # yayınlanır -> LANE önceliği korunur; yay yalnızca şerit DÜŞÜNCE PLAN'ın steering_ref'i
+        # olarak virajı takip eder (waypoint'e düz nişan alıp virajı KESMESİN).
+        self._turn_suppress_priority: bool = False
+        self._curve_skip_logged_idx: int = -1  # viraj logu wp başına bir kez
         self._plan_points: list = []  # aktif planın noktaları (dönüş geometrisi için)
         # Rotadan sapma bekçisi durumu
         self._min_dist_to_wp: float = float("inf")
@@ -328,6 +353,18 @@ class MissionPlanningNode(Node):
         self._last_park_mode = False
         self._last_park_remaining = 0.0
         self._turn_perm: dict | None = None
+        # Bir dönüş-kısıtı (tabela) için replan bir kez BAŞARILI olunca o rotayı kilitle:
+        # aynı kısıt görünürken tekrar tekrar replan yapıp rotayı değiştirmesin (rota her
+        # ilerlemede yeniden kurulup route_unstable ile dönüşü öldürüyordu). Sadece kısıt
+        # DEĞİŞİRSE (yeni/başka tabela) yeni replan. Kısıt kalkınca sıfırlanır.
+        self._replanned_restr_sig: tuple | None = None
+        # Durak cebi manevrası durumu (bkz. _durak_step)
+        self._maneuver_active = False
+        self._durak_phase = "idle"        # idle | giris | duzel_in | bekle | cikis | duzel_out
+        self._durak_entry_heading = 0.0
+        self._durak_hold_until = 0.0      # duvar saati (time.monotonic)
+        self._durak_engaged = False       # bu durak için manevra penceresine girildi mi
+        self._durak_min_wp_d = float("inf")  # levhaya (waypoint) görülen en yakın mesafe
         # Dönüş kısıtı kavşak-kapsamı durumu (bkz. _track_restriction_junction)
         self._restr_junction: tuple[float, float] | None = None
         self._restr_junction_min_d: float = float("inf")
@@ -357,6 +394,9 @@ class MissionPlanningNode(Node):
         )
         self._pub_intersection_passed = self.create_publisher(
             Bool, str(self.get_parameter("planning_intersection_passed_topic").value), 10
+        )
+        self._pub_maneuver = self.create_publisher(
+            Bool, str(self.get_parameter("planning_maneuver_active_topic").value), 10
         )
 
         # Park tamamlandı sinyali (perception) — park girişinden sonra 3dk içinde park etmek için
@@ -520,6 +560,7 @@ class MissionPlanningNode(Node):
     def _reset_route_tracking(self) -> None:
         """Replan sonrası: waypoint indeksleri değişti, dönüş/sapma takibini sıfırla."""
         self._turn_active = False
+        self._turn_suppress_priority = False
         self._turn_is_roundabout = False
         self._turn_rb_exit_idx = None
         self._turn_wp_index = None
@@ -754,6 +795,7 @@ class MissionPlanningNode(Node):
             for i in range(1, n_post + 1):
                 pts.append((bx + vx * 2.0 * i, by + vy * 2.0 * i))
         self._turn_active = True
+        self._turn_suppress_priority = False   # halka TAM öncelik ister (viraj bayrağı taşınmasın)
         self._turn_is_roundabout = True
         self._turn_wp_index = idx
         self._turn_rb_exit_idx = int(exit_idx)
@@ -870,22 +912,18 @@ class MissionPlanningNode(Node):
             leg_in = float(wp_state.bearing_to_wp_deg)  # ilk wp: geometri yok, pos->wp
         turn_deg = _angle_diff_deg(leg_out, leg_in)
         if abs(turn_deg) >= TURN_MIN_ANGLE_DEG and float(wp_state.distance_to_wp_m) <= TURN_ENGAGE_DISTANCE_M:
-            if not self._is_junction(cur):
-                if self._curve_skip_logged_idx != idx:
-                    self._curve_skip_logged_idx = idx
-                    self.get_logger().info(
-                        f"VİRAJ (kavşak değil): wp[{idx}] '{cur.name}' açı={turn_deg:+.0f}° "
-                        f"— şerit takibine bırakıldı"
-                    )
-                return
+            # Kavşak: yay + TURN önceliği (şerit görünse bile plan sürer).
+            # Viraj (kavşak değil): yay kurulur ama TURN önceliği YOK -> şerit iyiyken LANE
+            # sürer; yay yalnızca şerit düşünce PLAN'ın steering_ref'i olarak virajı takip
+            # eder (eskiden düz nişan alıp virajı kesiyordu).
+            self._turn_suppress_priority = not self._is_junction(cur)
             self._turn_active = True
             self._turn_wp_index = idx
             # Pusula farkı: + = SAĞ, − = SOL. Çıkış koşulu yöne göre ayrışır.
             self._turn_is_right = bool(turn_deg > 0.0)
             # Tetikleme anındaki mesafe: dönüş geç fark edilirse (köşe ancak önceki wp
             # geçilince current olur -> ~6 m kala) steer bu mesafeye göre güçlendirilir
-            # (bkz. _turn_arc_steering / _turn_late_gain). Yalnız kavşak dönüşü; viraj
-            # şerit takibinde, halka arc'ı da muaf.
+            # (bkz. _turn_arc_steering / _turn_late_gain). Halka arc'ı bunun dışında.
             self._turn_engage_dist = float(wp_state.distance_to_wp_m)
             try:
                 self._build_turn_arc(cur, nxt, leg_in, turn_deg)
@@ -893,12 +931,27 @@ class MissionPlanningNode(Node):
                 self._turn_path = None
                 self._turn_path_origin = None
                 self.get_logger().warn(f"Dönüş yayı üretilemedi ({e}) — wp steering'e düşüldü")
-            self.get_logger().info(
-                f"DÖNÜŞ başlıyor: wp[{idx}] '{cur.name}' açı={turn_deg:+.0f}° "
-                f"mesafe={wp_state.distance_to_wp_m:.1f}m "
-                f"kazanç={self._turn_late_gain():.2f}x "
-                f"yay={'ok (%d nokta)' % len(self._turn_path) if self._turn_path else 'yok'}"
-            )
+            if self._curve_skip_logged_idx != idx:
+                self._curve_skip_logged_idx = idx
+                _kind = "VİRAJ (şerit takibi, şerit düşerse yay yedeği)" if self._turn_suppress_priority else "DÖNÜŞ başlıyor"
+                self.get_logger().info(
+                    f"{_kind}: wp[{idx}] '{cur.name}' açı={turn_deg:+.0f}° "
+                    f"mesafe={wp_state.distance_to_wp_m:.1f}m "
+                    f"kazanç={self._turn_late_gain():.2f}x "
+                    f"yay={'ok (%d nokta)' % len(self._turn_path) if self._turn_path else 'yok'}"
+                )
+
+    def _restr_sig(self) -> tuple | None:
+        """Aktif dönüş kısıtının kimliği (bloklanan yönler + zorunlu yön). Kısıt yoksa/
+        izinliyse None. Aynı imza = aynı tabela -> tekrar replan gerekmez (rota kilitli)."""
+        tp = self._turn_perm
+        if tp is None:
+            return None
+        blocked = tuple(sorted(k for k in ("left", "straight", "right") if not bool(tp.get(k, True))))
+        forced = tp.get("forced_direction")
+        if not blocked and not forced:
+            return None
+        return (blocked, forced)
 
     def _offroute_watchdog(self, pos: GpsPosition, wp_state, park_mode: bool):
         """
@@ -1047,9 +1100,17 @@ class MissionPlanningNode(Node):
         # Dönüş kısıtı kavşak-kapsamı: kısıt uygulanan kavşak geçildiyse temizlet
         self._track_restriction_junction(pos, wp_state)
 
+        # Kısıt kalktıysa rota kilidini bırak (sonraki YENİ tabela tekrar replan yapabilsin)
+        _restr_sig = self._restr_sig()
+        if _restr_sig is None:
+            self._replanned_restr_sig = None
+
         # Replanning:
         # - road_blocked: edge blocking
         # - turn_permissions: temporary blocked outgoing edges at current node (approaching waypoint)
+        # - Aynı tabela için rota BİR KEZ kurulduysa (imza == kilit) tekrar replan YOK:
+        #   araç ilerledikçe her seferinde yeni (kısalmış) rota kurulup route_unstable ile
+        #   dönüşü öldürüyordu. Sadece kısıt değişince (yeni tabela) yeniden planla.
         do_replan = (
             self._route_graph is not None
             and self._base_plan is not None
@@ -1057,7 +1118,11 @@ class MissionPlanningNode(Node):
             and (
                 self._road_blocked
                 or self._entry_blocked
-                or (self._turn_perm is not None and float(wp_state.distance_to_wp_m) <= TURN_RULE_APPLY_DISTANCE_M)
+                or (
+                    _restr_sig is not None
+                    and _restr_sig != self._replanned_restr_sig
+                    and float(wp_state.distance_to_wp_m) <= TURN_RULE_APPLY_DISTANCE_M
+                )
             )
             # Rota bulunamadıysa her GPS karesinde yeniden denemeyelim (replan fırtınası);
             # soğuma bitene kadar eski planla devam, dönüş zaten bastırık.
@@ -1137,6 +1202,11 @@ class MissionPlanningNode(Node):
                     self._entry_blocked = False
                     self._last_turn_replan_sig = sig
                     self._last_turn_replan_t = now_m
+                    # Bu kısıt (tabela) için rota kuruldu: aynı kısıt görünürken bir daha
+                    # replan yapma (rota kilitli). Yeni/başka tabela gelirse imza değişip
+                    # tekrar planlanır.
+                    if _restr_sig is not None:
+                        self._replanned_restr_sig = _restr_sig
                     self._reset_route_tracking()
                     wp_state, mission_dec = self._manager.update(pos, now_s=time.monotonic())
                     # Rota oturdu: dönüşler tekrar açılabilir.
@@ -1162,7 +1232,14 @@ class MissionPlanningNode(Node):
         # Rotadan sapma bekçisi (gerekirse konumdan replan) + kavşak dönüş tespiti.
         # manager.update tek kez, satır içi çağrılmalı: iki kez çağırmak rota/replan
         # durumunu bozup no_route spam'ine ve yasak yola dönüşe yol açıyor.
-        _res = self._offroute_watchdog(pos, wp_state, bool(mission_dec.park_mode))
+        # Durak manevrası KASITLI bir rota-dışı çıkıntı (cebe yanaşma); offroute bekçisi
+        # bunu "rotadan saptı" sanıp cep konumundan rota kurmasın (erken dönüşe yol açıyordu).
+        # Dönüş-kısıtı replan'i (yukarıdaki do_replan) durakta AÇIK bırakılır — orada
+        # bastırmak replan'i erteleyip dönüşü bozuyordu; bu ayrı ve zararsız.
+        _res = self._offroute_watchdog(
+            pos, wp_state,
+            bool(mission_dec.park_mode) or bool(mission_dec.durak_active)
+            or self._durak_phase != "idle")
         if _res is not None:
             wp_state, mission_dec = _res
         self._update_turn_state(wp_state)
@@ -1198,6 +1275,54 @@ class MissionPlanningNode(Node):
         )
         base_speed *= float(turn_speed_mul)
         speed = self._apply_gps_timeout(base_speed)
+
+        # Durak cebi manevrası: durak noktasına varılınca mission_manager durak_active
+        # bildirir; manevra steer/hızı normal referansı EZER (maneuver_active ile
+        # vehicle_controller MANEUVER modu şeridi bastırır). Dönüş önceliğini de bırak.
+        #
+        # ÖNEMLİ (durak_2 sola-dönülmez kavşağı): manevra bir kez BAŞLADIYSA
+        # (durak_phase != idle) durak_active sonradan False olsa bile TAMAMLANANA kadar
+        # sürer. O kavşakta sola-dönülmez replan'i başarılı olunca YENİ bir MissionManager
+        # kuruyor ve onun durak_active'i False; bu replan yeni rotayı kurmak için gerekli,
+        # manevrayı iptal etmek için değil. Ayrıştırma: manevra kendi state'iyle
+        # tamamlanır, replan arka planda yeni rotayı üretir, manevra bitince araç yeni
+        # (replan'lı) rotayı normal izler.
+        durak_running = self._durak_phase != "idle"
+        if bool(mission_dec.durak_active) or durak_running:
+            if not durak_running:
+                # Henüz başlamadı: levhayı (durak waypoint) en yakın geçtikten DURAK_PAST_M
+                # sonra manevrayı aç (levhayı ~1.5 m geç). En yakın yaklaşımı izle.
+                wp = wp_state.current_wp
+                if wp is not None:
+                    _wx = (float(wp.lon) - self._datum_lon_deg) * self._m_per_deg_lon
+                    _wy = (float(wp.lat) - self._datum_lat_deg) * self._m_per_deg_lat
+                    _d_wp = math.hypot(_x - _wx, _y - _wy)
+                else:
+                    _d_wp = 0.0
+                if not self._durak_engaged:
+                    self._durak_engaged = True
+                    self._durak_min_wp_d = _d_wp
+                self._durak_min_wp_d = min(self._durak_min_wp_d, _d_wp)
+                if _d_wp > self._durak_min_wp_d + DURAK_PAST_M:
+                    durak_running = True   # levha geçildi: bu tik manevrayı başlat
+                else:
+                    self._maneuver_active = False   # levha henüz geçilmedi: normal sür
+            if durak_running:
+                d_steer, d_speed, d_done = self._durak_step()
+                if d_done:
+                    self._manager.notify_durak_completed()
+                    self._maneuver_active = False
+                    self._durak_engaged = False
+                    self._durak_min_wp_d = float("inf")
+                else:
+                    steer = float(d_steer)
+                    speed = float(d_speed)
+                    self._maneuver_active = True
+                    self._turn_active = False
+        else:
+            self._maneuver_active = False
+            self._durak_engaged = False
+            self._durak_min_wp_d = float("inf")
 
         self._last_steering = steer
         self._last_speed = speed
@@ -1237,6 +1362,56 @@ class MissionPlanningNode(Node):
         self._publish(self._last_steering, self._last_speed, self._last_task,
                       self._last_arrived, self._last_park_mode, self._last_park_remaining)
 
+    def _durak_step(self) -> tuple[float, float, bool]:
+        """Durak cebi manevrası. (steer_oranı[+=SAĞ], hız_oranı, tamamlandı) döner.
+
+        giris:     sağa kır — giriş yönüne göre DURAK_TURN_DEG kadar sağa dönene dek
+        duzel_in:  sola karşı-kır — yön giriş yönüne geri gelene dek (cebe paralel, sağa ötelenmiş)
+        bekle:     dur (hız 0), DURAK_HOLD_S kadar
+        cikis:     sola kır — DURAK_EXIT_TURN_DEG kadar sola (burun şeride) dönünce -> tamam;
+                   son hizalanmayı şerit takibi yapar (sağa savuran duzel_out fazı yok).
+        """
+        def _ang(a: float) -> float:
+            return ((a + 180.0) % 360.0) - 180.0
+
+        if self._durak_phase == "idle":
+            self._durak_phase = "giris"
+            self._durak_entry_heading = float(self._heading_deg)
+            self.get_logger().warn("DURAK: cebe yanaşma başladı (sağa)")
+
+        # + = giriş yönüne göre SAĞA (saat yönü) dönülen açı
+        delta = _ang(float(self._heading_deg) - self._durak_entry_heading)
+
+        # Faz geçişleri (yön/zaman eşikleri). Her tik en fazla bir faz ilerler; geçiş
+        # sonrası komut YENİ faza göre üretilir (geçiş tikinde ters kırışı geciktirmez).
+        done = False
+        if self._durak_phase == "giris" and delta >= DURAK_TURN_DEG:
+            self._durak_phase = "duzel_in"
+        elif self._durak_phase == "duzel_in" and delta <= DURAK_ALIGN_TOL_DEG:
+            self._durak_phase = "bekle"
+            self._durak_hold_until = time.monotonic() + DURAK_HOLD_S
+            self.get_logger().warn("DURAK: cepte bekleniyor")
+        elif self._durak_phase == "bekle" and time.monotonic() >= self._durak_hold_until:
+            self._durak_phase = "cikis"
+            self.get_logger().warn("DURAK: şeride dönülüyor")
+        elif self._durak_phase == "cikis" and delta <= -DURAK_EXIT_TURN_DEG:
+            # Burun şeride kırıldı: manevrayı bırak, son hizalanmayı şerit takibi yapsın.
+            self._durak_phase = "idle"
+            done = True
+            self.get_logger().warn("DURAK: manevra tamamlandı, şerit takibine bırakıldı")
+
+        # Faz -> komut (steer + = SAĞA)
+        if done or self._durak_phase == "idle":
+            return 0.0, DURAK_CRAWL_RATIO, done
+        if self._durak_phase == "giris":
+            return DURAK_STEER, DURAK_CRAWL_RATIO, False
+        if self._durak_phase == "duzel_in":
+            return -DURAK_STEER, DURAK_CRAWL_RATIO, False
+        if self._durak_phase == "bekle":
+            return 0.0, 0.0, False
+        # cikis
+        return -DURAK_STEER, DURAK_CRAWL_RATIO, False
+
     def _publish(self, steer: float, speed: float, task: str, arrived: bool, park_mode: bool, park_remaining_s: float) -> None:
         self._last_arrived = bool(arrived)
         self._last_park_mode = bool(park_mode)
@@ -1247,7 +1422,11 @@ class MissionPlanningNode(Node):
         self._pub_arrived.publish(Bool(data=bool(arrived)))
         self._pub_park_mode.publish(Bool(data=bool(park_mode)))
         self._pub_park_remaining.publish(Float32(data=float(park_remaining_s)))
-        self._pub_turn_active.publish(Bool(data=bool(self._turn_active)))
+        # Viraj (suppress_priority) iken turn_active YAYINLANMAZ: LANE önceliği korunur,
+        # yay sadece şerit düşünce PLAN steering_ref'i olarak devrede.
+        self._pub_turn_active.publish(
+            Bool(data=bool(self._turn_active and not self._turn_suppress_priority)))
+        self._pub_maneuver.publish(Bool(data=bool(self._maneuver_active)))
 
 
 def main(args=None):

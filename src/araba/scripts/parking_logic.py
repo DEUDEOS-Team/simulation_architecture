@@ -32,7 +32,10 @@ IMAGE_WIDTH_PX = 1280
 MIN_CONFIDENCE = 0.40
 APPROACH_TRIGGER_M = 8.0
 ALIGN_TRIGGER_M = 3.0
-MANEUVER_TRIGGER_M = 1.5
+# Manevranın "park edildi" sayıldığı tabelaya mesafe. 1.5 m iken araç cebe girip
+# levhanın dibine kadar sokuluyordu; 2.5 m'de erken durup cebin içinde makul bir
+# yerde kalıyor (ALIGN_TRIGGER 3.0 m'nin hemen altında).
+MANEUVER_TRIGGER_M = 2.5
 
 LATERAL_OK_M = 0.30
 LATERAL_GAIN = 1.50
@@ -160,6 +163,18 @@ class ParkingLogic:
         self._reset()
 
     def _transition(self, dist: Optional[float], lateral: Optional[float]) -> ParkState:
+        # Mesafe bilinmiyorsa ASLA "park tamamlandı"ya düşme: aşağıdaki faz bloklarının
+        # hiçbiri return etmeyip en sona (PARKED, complete=True) düşerdi ve araç park
+        # modundan çıkıp levhaya doğru serbest sürerdi. Mesafe yokken yavaşça ara.
+        if dist is None and self._phase != ParkPhase.PARKED:
+            return ParkState(
+                phase=self._phase,
+                steering=0.0,
+                speed_ratio=SPEED_SEARCH,
+                distance_m=None,
+                reason="park tabelası mesafesi yok (LiDAR direği bekleniyor): yavaş arıyor",
+            )
+
         if self._phase == ParkPhase.WAITING:
             if dist is not None and dist <= APPROACH_TRIGGER_M:
                 self._phase = ParkPhase.APPROACHING

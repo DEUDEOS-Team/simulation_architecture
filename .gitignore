@@ -1,0 +1,27 @@
+# ROS 2 / colcon derleme çıktıları
+/build/
+/install/
+/log/
+**/build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Veri seti / kayıt / büyük çıktılar
+/dataset/
+/rapor/
+/kayit_loglari_*/
+rosbag2_*/
+*.mcap
+*.npy
+*.mp4
+*.zip
+
+# Editör / OS artıkları
+.vscode/
+.idea/
+*.swp
+.DS_Store
+*:Zone.Identifier

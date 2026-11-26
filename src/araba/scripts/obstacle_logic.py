@@ -1,0 +1,351 @@
+"""
+obstacle_logic.py
+-----------------
+Yaya / koni / bariyer tespitlerini davranisa ceviren ust katman.
+"""
+
+import time
+from dataclasses import dataclass, field
+from typing import Optional
+
+from deos_algorithms.safety_logic import (
+    CORRIDOR_HALF_WIDTH_M,
+    SafetyLogic,
+    Detection as SafetyDetection,
+    ThreatLevel,
+    ThreatObservation,
+)
+
+
+class ObstacleKind:
+    PEDESTRIAN = "pedestrian"
+    CONE = "cone"
+    BARRIER = "barrier"
+    UNKNOWN = "unknown"
+
+
+class ObstacleBehavior:
+    CLEAR = "clear"
+    STATIC_AVOID = "static_avoid"
+    DYNAMIC_SLOW = "dynamic_slow"
+    DYNAMIC_WAIT = "dynamic_wait"
+    EMERGENCY_STOP = "emergency_stop"
+
+
+PEDESTRIAN_ALIASES = {"pedestrian", "person", "people", "yaya", "insan"}
+CONE_ALIASES = {"cone", "traffic_cone", "koni", "trafik konisi"}
+BARRIER_ALIASES = {"barrier", "fence", "roadblock", "bariyer", "engel", "blok"}
+
+
+MIN_CONFIDENCE = 0.4
+DYNAMIC_SLOW_DISTANCE_M = 10.0
+DYNAMIC_SLOW_SPEED_CAP = 0.4
+DYNAMIC_STOP_DISTANCE_M = 5.0
+DYNAMIC_CLEAR_FRAMES = 3
+# Kaçınma tetiği acil fren mesafesine yakın olursa manevra penceresi kalmıyor.
+# 5 m/s'de 7 m ≈ 1.4 s tepki penceresi kısaydı, kaçınma manevrası tamamlanamadan
+# çarpılıyordu; 9 m tetik daha erken karar için pay bırakır.
+STATIC_LANE_CHANGE_TRIGGER_M = 9.0
+STATIC_LANE_CHANGE_SPEED_CAP = 0.35
+STATIC_EMERGENCY_DISTANCE_M = 1.5
+
+# Sıralı statik engeller için kaçınma stabilizasyonu (zigzag azaltma)
+STATIC_AVOID_COMMIT_FRAMES = 6  # yön kararı en az bu kadar frame korunur
+# Commit bırakma eşiği tetikten BÜYÜK olmalı: aksi hâlde tetik-bırakma arası
+# bantta commit her karede silinip yön kararı yeniden verilir (zigzag riski).
+# Engel geçilip koridordan çıkınca commit zaten sıfırlanır.
+STATIC_AVOID_CLEAR_DISTANCE_M = 11.0  # en yakın statik engel bu mesafeden uzaksa commit bırak (tetik 9'u aşmalı)
+STATIC_AVOID_SWITCH_MARGIN_M = 0.6  # zıt tarafa geçmek için "daha belirgin" yakınlık farkı
+
+# Dinamik engelde dur-bekle sonrası kaçınma geçişi için minimum bekleme süresi.
+# Tick sayısına değil time.monotonic()'e dayandığı için ROS node Hz'inden bağımsız.
+DYNAMIC_AVOID_HOLD_S = 0.4
+
+# Acil fren histerezisi: eşik dibindeki kamera tespitleri kare-kare girip çıkınca tek
+# karelik acil sinyaller kaçınma override'ını titretiyor (vehicle_controller OVERRIDE<->LANE
+# flap). Tek kare acil yok sayılır; arka arkaya EMERGENCY_CONFIRM_FRAMES kare sürerse ya da
+# engel gerçekten burnun dibindeyse (EMERGENCY_IMMEDIATE_DIST_M) anında geçer.
+EMERGENCY_CONFIRM_FRAMES = 2
+EMERGENCY_IMMEDIATE_DIST_M = 1.2
+
+# Yol-kapalı (road_blocked) kararı: "barrier_count > 1" tek başına yetmez — tünel giriş
+# duvarları da ≥1.5 m çapla "barrier" sınıflanıp 20 m öteden yolu kapalı gösteriyor ve
+# replan fırtınası çıkarıyordu. Kapalı ilanı için bariyerler yakın olmalı ve aralarında
+# araç sığacak yanal boşluk olmamalı (tünel ağzı ortası açık -> geçit sayılır).
+ROAD_BLOCKED_MAX_DISTANCE_M = 8.0
+ROAD_BLOCKED_MIN_GAP_M = 1.8
+
+
+def classify_obstacle(class_name: str) -> Optional[str]:
+    if not class_name:
+        return None
+    low = class_name.strip().lower()
+    if low in PEDESTRIAN_ALIASES:
+        return ObstacleKind.PEDESTRIAN
+    if low in CONE_ALIASES:
+        return ObstacleKind.CONE
+    if low in BARRIER_ALIASES:
+        return ObstacleKind.BARRIER
+    return None
+
+
+def is_obstacle_class(class_name: str) -> bool:
+    return classify_obstacle(class_name) is not None
+
+
+def is_dynamic_kind(kind: str) -> bool:
+    return kind == ObstacleKind.PEDESTRIAN
+
+
+def is_static_kind(kind: str) -> bool:
+    # UNKNOWN da statik sayılır: sıkı koni kümesi lidar'da 0.4-1.5 m çapla 'unknown'
+    # sınıflanınca iki listeye de girmiyor, kaçınma devreye girmiyor ama safety <3 m'de
+    # acil freni kilitliyordu. Tek dinamik sınıf yaya; tanınmayan duran nesne statik engel
+    # gibi geçilir.
+    return kind in {ObstacleKind.CONE, ObstacleKind.BARRIER, ObstacleKind.UNKNOWN}
+
+
+@dataclass
+class ObstacleDetection:
+    kind: str
+    confidence: float
+    bbox_px: tuple[float, float, float, float]
+    estimated_distance_m: Optional[float] = None
+    estimated_lateral_m: Optional[float] = None
+
+
+@dataclass
+class ObstacleState:
+    emergency_stop: bool = False
+    speed_cap_ratio: float = 1.0
+    threat_level: ThreatLevel = ThreatLevel.NONE
+    closest_obstacle_m: Optional[float] = None
+
+    pedestrian_in_corridor: bool = False
+    cone_in_corridor: bool = False
+    barrier_in_corridor: bool = False
+
+    suggest_lane_change: bool = False
+    road_blocked: bool = False
+    waiting_for_dynamic_obstacle: bool = False
+    dynamic_avoid_active: bool = False
+    dynamic_avoidance_direction: Optional[str] = None
+    avoidance_direction: Optional[str] = None
+    behavior_mode: str = ObstacleBehavior.CLEAR
+
+    active_kinds: list[str] = field(default_factory=list)
+    reason: str = ""
+
+
+class ObstacleLogic:
+    def __init__(self):
+        self._safety = SafetyLogic()
+        self._dynamic_wait_active = False
+        self._dynamic_clear_frames = 0
+        self._static_commit_dir: Optional[str] = None
+        self._static_commit_frames_left: int = 0
+        self._dynamic_stop_started_at: Optional[float] = None  # time.monotonic() zamanı
+        self._emergency_streak: int = 0  # ardışık acil kare sayacı (histerezis)
+
+    def update(
+        self,
+        detections: list[ObstacleDetection],
+        now: Optional[float] = None,
+    ) -> ObstacleState:
+        if now is None:
+            now = time.monotonic()
+        safety_dets = [
+            SafetyDetection(
+                x1=d.bbox_px[0],
+                y1=d.bbox_px[1],
+                x2=d.bbox_px[2],
+                y2=d.bbox_px[3],
+                class_name=d.kind,
+                confidence=d.confidence,
+                estimated_distance_m=d.estimated_distance_m,
+                estimated_lateral_m=d.estimated_lateral_m,
+            )
+            for d in detections
+        ]
+        analysis = self._safety.analyze(safety_dets)
+        decision = analysis.decision
+
+        # Acil histerezisi (bkz. EMERGENCY_CONFIRM_FRAMES)
+        raw_emergency = bool(decision.emergency_stop)
+        self._emergency_streak = self._emergency_streak + 1 if raw_emergency else 0
+        immediate = (
+            decision.closest_obstacle_m is not None
+            and float(decision.closest_obstacle_m) < EMERGENCY_IMMEDIATE_DIST_M
+        )
+        debounced_emergency = raw_emergency and (
+            self._emergency_streak >= EMERGENCY_CONFIRM_FRAMES or immediate
+        )
+
+        state = ObstacleState(
+            emergency_stop=debounced_emergency,
+            speed_cap_ratio=decision.speed_cap_ratio,
+            threat_level=decision.threat_level,
+            closest_obstacle_m=decision.closest_obstacle_m,
+            reason=decision.reason,
+        )
+
+        corridor_threats = analysis.corridor_threats
+        corridor_kinds = {th.detection.class_name for th in corridor_threats}
+        state.pedestrian_in_corridor = ObstacleKind.PEDESTRIAN in corridor_kinds
+        state.cone_in_corridor = ObstacleKind.CONE in corridor_kinds
+        state.barrier_in_corridor = ObstacleKind.BARRIER in corridor_kinds
+        state.active_kinds = sorted(corridor_kinds)
+
+        dynamic_threats = [th for th in corridor_threats if is_dynamic_kind(th.detection.class_name)]
+        static_threats = [th for th in corridor_threats if is_static_kind(th.detection.class_name)]
+
+        self._apply_dynamic_wait(state, dynamic_threats, now)
+        if not state.waiting_for_dynamic_obstacle:
+            self._apply_static_avoidance(state, static_threats)
+
+        if state.emergency_stop:
+            state.behavior_mode = ObstacleBehavior.EMERGENCY_STOP
+        return state
+
+    def _apply_dynamic_wait(self, state: ObstacleState, dynamic_threats: list[ThreatObservation], now: float) -> None:
+        nearest = self._nearest(dynamic_threats)
+        should_wait = nearest is not None and nearest.distance_m <= DYNAMIC_STOP_DISTANCE_M
+
+        if should_wait:
+            self._dynamic_wait_active = True
+            self._dynamic_clear_frames = 0
+        elif self._dynamic_wait_active:
+            if dynamic_threats:
+                self._dynamic_clear_frames = 0
+            else:
+                self._dynamic_clear_frames += 1
+                if self._dynamic_clear_frames >= DYNAMIC_CLEAR_FRAMES:
+                    self._dynamic_wait_active = False
+                    self._dynamic_clear_frames = 0
+
+        if not self._dynamic_wait_active:
+            self._dynamic_stop_started_at = None
+            if nearest is not None and nearest.distance_m <= DYNAMIC_SLOW_DISTANCE_M:
+                state.speed_cap_ratio = min(state.speed_cap_ratio, DYNAMIC_SLOW_SPEED_CAP)
+                state.behavior_mode = ObstacleBehavior.DYNAMIC_SLOW
+                state.closest_obstacle_m = nearest.distance_m
+                state.reason = f"SLOW_DYNAMIC: {nearest.detection.class_name} at {nearest.distance_m:.1f}m"
+            return
+
+        state.waiting_for_dynamic_obstacle = True
+        state.behavior_mode = ObstacleBehavior.DYNAMIC_WAIT
+        state.speed_cap_ratio = 0.0
+        if nearest is not None:
+            state.closest_obstacle_m = nearest.distance_m
+            state.reason = f"WAIT_DYNAMIC: {nearest.detection.class_name} at {nearest.distance_m:.1f}m"
+        else:
+            state.reason = f"WAIT_DYNAMIC: clearing {self._dynamic_clear_frames}/{DYNAMIC_CLEAR_FRAMES}"
+
+        # Two-stage dynamic behavior (competition heuristic):
+        # 1) Stop (wait) when pedestrian is too close.
+        # 2) After a short stop-hold, if LiDAR lateral offset exists, suggest a cautious pass on opposite side.
+        #    This is only a suggestion; lane constraint may clamp/disable it.
+        if nearest is None:
+            self._dynamic_stop_started_at = None
+            return
+
+        if self._dynamic_stop_started_at is None:
+            self._dynamic_stop_started_at = now
+
+        elapsed_s = now - self._dynamic_stop_started_at
+        lat = float(nearest.lateral_m)
+        if elapsed_s >= DYNAMIC_AVOID_HOLD_S and abs(lat) >= 0.35:
+            state.dynamic_avoid_active = True
+            # Opposite side of obstacle lateral: obstacle on left => pass right, etc.
+            state.dynamic_avoidance_direction = "right" if lat > 0 else "left"
+            state.speed_cap_ratio = min(state.speed_cap_ratio, 0.2)
+            state.reason = f"AVOID_DYNAMIC_AFTER_STOP: dir={state.dynamic_avoidance_direction} lat={lat:+.2f}m"
+
+    def _apply_static_avoidance(self, state: ObstacleState, static_threats: list[ThreatObservation]) -> None:
+        nearest = self._nearest(static_threats)
+        if nearest is None:
+            self._static_commit_dir = None
+            self._static_commit_frames_left = 0
+            state.road_blocked = False
+            return
+
+        # Commit bırakma: yol temizlenince
+        if nearest.distance_m > STATIC_AVOID_CLEAR_DISTANCE_M:
+            self._static_commit_dir = None
+            self._static_commit_frames_left = 0
+
+        if nearest.distance_m > STATIC_LANE_CHANGE_TRIGGER_M:
+            state.road_blocked = self._is_road_blocked(static_threats)
+            return
+
+        # Sıralı engellerde zigzag'ı azaltmak için yönü "commit" et:
+        # - commit aktifse, süre bitene kadar aynı yönü koru
+        # - commit yoksa, en yakın engelin lateral'ına göre karar ver
+        desired_dir = self._avoidance_direction(nearest.lateral_m)
+
+        if self._static_commit_dir is None:
+            self._static_commit_dir = desired_dir
+            self._static_commit_frames_left = STATIC_AVOID_COMMIT_FRAMES
+        else:
+            # commit aktifken yön değiştirmeyi zorlaştır:
+            # zıt yön ancak daha yakın ve belirgin ise (mesafe marjı) değişsin
+            if desired_dir != self._static_commit_dir and self._static_commit_frames_left <= 0:
+                # Yakındaki zıt tarafta engel var mı?
+                opposite = [t for t in static_threats if self._avoidance_direction(t.lateral_m) == desired_dir]
+                nearest_op = self._nearest(opposite)
+                if nearest_op is not None and (nearest.distance_m - nearest_op.distance_m) >= STATIC_AVOID_SWITCH_MARGIN_M:
+                    self._static_commit_dir = desired_dir
+                    self._static_commit_frames_left = STATIC_AVOID_COMMIT_FRAMES
+
+        if self._static_commit_frames_left > 0:
+            self._static_commit_frames_left -= 1
+
+        state.suggest_lane_change = True
+        state.avoidance_direction = self._static_commit_dir
+        state.behavior_mode = ObstacleBehavior.STATIC_AVOID
+        state.speed_cap_ratio = min(state.speed_cap_ratio, STATIC_LANE_CHANGE_SPEED_CAP)
+        state.reason = (
+            f"AVOID_STATIC: {nearest.detection.class_name} -> {state.avoidance_direction} "
+            f"at {nearest.distance_m:.1f}m (commit_left={self._static_commit_frames_left})"
+        )
+
+        if nearest.distance_m > STATIC_EMERGENCY_DISTANCE_M:
+            state.emergency_stop = False
+            if state.threat_level == ThreatLevel.EMERGENCY:
+                state.threat_level = ThreatLevel.HARD_SLOW
+            # SafetyLogic can output speed_cap_ratio=0.0 for <3m.
+            # For static avoidance beyond the hard emergency distance, do not keep a full stop cap.
+            state.speed_cap_ratio = max(state.speed_cap_ratio, STATIC_LANE_CHANGE_SPEED_CAP)
+
+        state.road_blocked = self._is_road_blocked(static_threats)
+
+    @staticmethod
+    def _is_road_blocked(static_threats: list[ThreatObservation]) -> bool:
+        """
+        Yol gerçekten kapalı mı? En az iki YAKIN bariyer olmalı ve sıralı yanal
+        konumları (koridor kenarları dahil) arasında araç sığacak boşluk
+        kalmamalı. Aralarında ROAD_BLOCKED_MIN_GAP_M+ boşluk varsa (tünel ağzı,
+        kapı gibi) yol geçilebilirdir.
+        """
+        barriers = [
+            t for t in static_threats
+            if t.detection.class_name == ObstacleKind.BARRIER
+            and float(t.distance_m) <= ROAD_BLOCKED_MAX_DISTANCE_M
+        ]
+        if len(barriers) < 2:
+            return False
+        lats = sorted(float(t.lateral_m) for t in barriers)
+        bounds = [-CORRIDOR_HALF_WIDTH_M] + lats + [CORRIDOR_HALF_WIDTH_M]
+        widest_gap = max(b - a for a, b in zip(bounds, bounds[1:]))
+        return widest_gap < ROAD_BLOCKED_MIN_GAP_M
+
+    @staticmethod
+    def _nearest(threats: list[ThreatObservation]) -> Optional[ThreatObservation]:
+        if not threats:
+            return None
+        return min(threats, key=lambda threat: threat.distance_m)
+
+    @staticmethod
+    def _avoidance_direction(lateral_m: float) -> str:
+        return "right" if lateral_m >= 0.0 else "left"
+

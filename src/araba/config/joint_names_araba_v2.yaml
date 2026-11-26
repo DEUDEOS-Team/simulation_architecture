@@ -1,0 +1,1 @@
+controller_joint_names: ['', 'on_sag_yatay_direksiyon_hareket', 'on_sag_ileri_donus_hareket', 'on_sol_yatay_direksiyon_hareket', 'on_sol_ileri_donus_hareket', 'arka_sol_ileri_donus_hareket', 'arka_sag_ileri_donus_hareket', ]

@@ -1,0 +1,76 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "generator": "kavşak dönüş testi — teknofest_gorev.geojson kısaltması (durak_1 öncesi atlandı)",
+    "datum": [
+      40.7899,
+      29.5089
+    ]
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 0,
+        "name": "start",
+        "task": "baslangic",
+        "note": "test spawn: ENU(-36.0, 18.0), durak_2 oncesi"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5084723,
+          40.7900619
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "durak_2",
+        "task": "durak",
+        "note": "durak_0 levhasi (-39.01, 12.55) onu; D yolu guney serit"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5084687,
+          40.790013
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "park_giris",
+        "task": "park_giris",
+        "note": "park erisim yoluna donusten hemen sonra (tek cizgi cift yon)"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5090315,
+          40.7894678
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "park",
+        "task": "park_yeri",
+        "note": "park_yeri_1 levhasi onundeki cep; koridordan guneye manevra"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          29.5091986,
+          40.7892516
+        ]
+      }
+    }
+  ]
+}
